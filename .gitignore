@@ -1,0 +1,7 @@
+target/
+.env
+*.log
+.idea/
+.vscode/
+*.swp
+*.swo
