@@ -7,13 +7,14 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod handlers;
+mod middleware;
 mod state;
 mod store;
 
 use handlers::auth;
 use state::AppState;
 use store::memory::MemoryStore;
-
+use crate::handlers::users;
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -44,9 +45,12 @@ async fn main() {
     };
 
     let app = Router::new()
+        // Public routes
         .route("/health", get(health))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
+        // Protected routes
+        .route("/users/me", get(users::get_me))
         .with_state(state);
 
     let addr = format!("{}:{}", config.host, config.port);
