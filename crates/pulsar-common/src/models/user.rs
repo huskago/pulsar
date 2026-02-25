@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 pub struct User {
     pub id: Snowflake,
     pub username: String,
-    pub discriminator: Option<String>,
     pub email: String,
     #[serde(skip_serializing)]
     pub password_hash: String,
@@ -21,4 +20,23 @@ pub enum UserStatus {
     Online,
     Idle,
     DoNotDisturb,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateUser {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthResponse {
+    pub token: String,
+    pub user: User,
 }
