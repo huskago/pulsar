@@ -7,8 +7,10 @@ edition.workspace = true
 pulsar-common = { path = "../pulsar-common" }
 pulsar-auth = { path = "../pulsar-auth" }
 pulsar-db = { path = "../pulsar-db" }
+pulsar-storage = { path = "../pulsar-storage" }
 tokio.workspace = true
 axum.workspace = true
+axum-extra.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

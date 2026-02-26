@@ -14,8 +14,8 @@ use pulsar_common::models::{
 };
 use pulsar_messaging::nats_client::NatsClient;
 use pulsar_messaging::subjects;
-use std::time::Duration;
 use sqlx::PgPool;
+use std::time::Duration;
 use tracing::{error, info, warn};
 
 // GET /gateway
@@ -105,7 +105,9 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
                 Ok(e) => e,
                 Err(_) => continue,
             };
-            typing_connections.send_to_user(&typing_user_id, event).await;
+            typing_connections
+                .send_to_user(&typing_user_id, event)
+                .await;
         }
     });
 
@@ -135,8 +137,14 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         while let Some(Ok(message)) = receiver.next().await {
             match message {
                 Message::Text(text) => {
-                    handle_client_message(&text, &recv_user_id, &recv_nats, &recv_connections, &recv_db)
-                        .await;
+                    handle_client_message(
+                        &text,
+                        &recv_user_id,
+                        &recv_nats,
+                        &recv_connections,
+                        &recv_db,
+                    )
+                    .await;
                 }
                 Message::Close(_) => break,
                 _ => {}
@@ -204,6 +212,7 @@ async fn handle_client_message(
         ClientEvent::SendMessage {
             channel_id,
             content,
+            attachments,
         } => {
             let ch_id: i64 = match channel_id.parse() {
                 Ok(id) => id,
@@ -216,13 +225,38 @@ async fn handle_client_message(
 
             let msg_id = chrono::Utc::now().timestamp_millis();
 
-            if let Err(e) = pulsar_db::repo::messages::insert(
-                db, msg_id, ch_id, u_id, &content,
-            )
-            .await
+            if let Err(e) =
+                pulsar_db::repo::messages::insert(db, msg_id, ch_id, u_id, &content).await
             {
                 error!("Failed to persist message: {}", e);
                 return;
+            }
+
+            let mut attachment_payloads = Vec::new();
+            for att in &attachments {
+                let att_id = chrono::Utc::now().timestamp_nanos_opt().unwrap();
+
+                match pulsar_db::repo::attachments::insert(
+                    db,
+                    att_id,
+                    msg_id,
+                    &att.filename,
+                    &att.content_type,
+                    att.size,
+                    &att.url,
+                    &att.url,
+                )
+                .await
+                {
+                    Ok(_) => {
+                        info!(att_id = %att_id, msg_id = %msg_id, "Attachment saved to DB");
+                        attachment_payloads.push(att.clone());
+                    }
+                    Err(e) => {
+                        error!(att_id = %att_id, msg_id = %msg_id, error = %e, "Failed to insert attachment");
+                        attachment_payloads.push(att.clone());
+                    }
+                }
             }
 
             let message = pulsar_common::models::message::Message {
@@ -230,6 +264,7 @@ async fn handle_client_message(
                 channel_id: Snowflake(ch_id),
                 author_id: Snowflake(u_id),
                 content,
+                attachments: attachment_payloads,
                 timestamp: chrono::Utc::now().timestamp_millis(),
                 edited_timestamp: None,
             };

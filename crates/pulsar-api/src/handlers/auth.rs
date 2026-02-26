@@ -73,12 +73,7 @@ pub async fn login(
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-
-    let valid = password::verify_password(
-        payload.password,
-        row.password_hash.clone()
-    )
-        .await?;
+    let valid = password::verify_password(payload.password, row.password_hash.clone()).await?;
 
     if !valid {
         return Err(AppError::Unauthorized);

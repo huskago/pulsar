@@ -1,14 +1,15 @@
-import type { Message, UserStatus } from './models';
+import type {AttachmentData} from '$lib/services/api';
+import type {Message, UserStatus} from './models';
 
 export type ServerEvent =
-	| { type: 'Hello'; data: { heartbeat_interval: number } }
-	| { type: 'MessageCreate'; data: Message }
-	| { type: 'PresenceUpdate'; data: { user_id: string; status: UserStatus } }
-	| { type: 'TypingStart'; data: { channel_id: string; user_id: string } }
-	| { type: 'HeartbeatAck' };
+    | { type: 'Hello'; data: { heartbeat_interval: number } }
+    | { type: 'MessageCreate'; data: Message }
+    | { type: 'PresenceUpdate'; data: { user_id: string; status: UserStatus } }
+    | { type: 'TypingStart'; data: { channel_id: string; user_id: string } }
+    | { type: 'HeartbeatAck' };
 
 export type ClientEvent =
-	| { type: 'Identify'; data: { token: string } }
-	| { type: 'Heartbeat' }
-	| { type: 'SendMessage'; data: { channel_id: string; content: string } }
-	| { type: 'StartTyping'; data: { channel_id: string } };
+    | { type: 'Identify'; data: { token: string } }
+    | { type: 'Heartbeat' }
+    | { type: 'SendMessage'; data: { channel_id: string; content: string, attachments: AttachmentData[] } }
+    | { type: 'StartTyping'; data: { channel_id: string } };

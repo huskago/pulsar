@@ -1,4 +1,5 @@
-import type { ClientEvent, ServerEvent } from '$lib/types/events';
+import type {ClientEvent, ServerEvent} from '$lib/types/events';
+import type {AttachmentData} from './api';
 
 let ws: WebSocket | null = $state(null);
 let connected = $state(false);
@@ -9,110 +10,110 @@ type EventHandler = (event: ServerEvent) => void;
 let handlers: EventHandler[] = [];
 
 function connect(token: string) {
-	if (ws?.readyState === WebSocket.OPEN) return;
+    if (ws?.readyState === WebSocket.OPEN) return;
 
-	const socket = new WebSocket('ws://localhost:3001/gateway');
+    const socket = new WebSocket('ws://localhost:3001/gateway');
 
-	socket.onopen = () => {
-		send({ type: 'Identify', data: { token } });
-	};
+    socket.onopen = () => {
+        send({type: 'Identify', data: {token}});
+    };
 
-	socket.onmessage = (raw) => {
-		const event: ServerEvent = JSON.parse(raw.data);
+    socket.onmessage = (raw) => {
+        const event: ServerEvent = JSON.parse(raw.data);
 
-		switch (event.type) {
-			case 'Hello':
-				connected = true;
-				reconnecting = false;
-				startHeartbeat(event.data.heartbeat_interval);
-				break;
+        switch (event.type) {
+            case 'Hello':
+                connected = true;
+                reconnecting = false;
+                startHeartbeat(event.data.heartbeat_interval);
+                break;
 
-			case 'HeartbeatAck':
-				break;
+            case 'HeartbeatAck':
+                break;
 
-			default:
-				for (const handler of handlers) {
-					handler(event);
-				}
-		}
-	};
+            default:
+                for (const handler of handlers) {
+                    handler(event);
+                }
+        }
+    };
 
-	socket.onclose = () => {
-		connected = false;
-		stopHeartbeat();
+    socket.onclose = () => {
+        connected = false;
+        stopHeartbeat();
 
-		if (!reconnecting) {
-			reconnecting = true;
-			setTimeout(() => connect(token), 3000);
-		}
-	};
+        if (!reconnecting) {
+            reconnecting = true;
+            setTimeout(() => connect(token), 3000);
+        }
+    };
 
-	socket.onerror = () => {
-		socket.close();
-	};
+    socket.onerror = () => {
+        socket.close();
+    };
 
-	ws = socket;
+    ws = socket;
 }
 
 function disconnect() {
-	reconnecting = false;
-	stopHeartbeat();
-	ws?.close();
-	ws = null;
-	connected = false;
+    reconnecting = false;
+    stopHeartbeat();
+    ws?.close();
+    ws = null;
+    connected = false;
 }
 
 function send(event: ClientEvent) {
-	if (ws?.readyState === WebSocket.OPEN) {
-		ws.send(JSON.stringify(event));
-	}
+    if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(event));
+    }
 }
 
 function startHeartbeat(intervalMs: number) {
-	stopHeartbeat();
-	heartbeatInterval = setInterval(() => {
-		send({ type: 'Heartbeat' });
-	}, intervalMs);
+    stopHeartbeat();
+    heartbeatInterval = setInterval(() => {
+        send({type: 'Heartbeat'});
+    }, intervalMs);
 }
 
 function stopHeartbeat() {
-	if (heartbeatInterval) {
-		clearInterval(heartbeatInterval);
-		heartbeatInterval = null;
-	}
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
 }
 
 function onEvent(handler: EventHandler): () => void {
-	handlers.push(handler);
-	return () => {
-		handlers = handlers.filter((h) => h !== handler);
-	};
+    handlers.push(handler);
+    return () => {
+        handlers = handlers.filter((h) => h !== handler);
+    };
 }
 
-function sendMessage(channelId: string, content: string) {
-	send({
-		type: 'SendMessage',
-		data: { channel_id: channelId, content }
-	});
+function sendMessage(channelId: string, content: string, attachments: AttachmentData[] = []) {
+    send({
+        type: 'SendMessage',
+        data: {channel_id: channelId, content, attachments}
+    });
 }
 
 function startTyping(channelId: string) {
-	send({
-		type: 'StartTyping',
-		data: { channel_id: channelId }
-	});
+    send({
+        type: 'StartTyping',
+        data: {channel_id: channelId}
+    });
 }
 
 export const gateway = {
-	get connected() {
-		return connected;
-	},
-	get reconnecting() {
-		return reconnecting;
-	},
-	connect,
-	disconnect,
-	onEvent,
-	sendMessage,
-	startTyping
+    get connected() {
+        return connected;
+    },
+    get reconnecting() {
+        return reconnecting;
+    },
+    connect,
+    disconnect,
+    onEvent,
+    sendMessage,
+    startTyping
 };

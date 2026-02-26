@@ -1,5 +1,5 @@
-use sqlx::PgPool;
 use pulsar_common::error::AppError;
+use sqlx::PgPool;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct ChannelRow {
@@ -22,32 +22,30 @@ pub async fn insert(
     sqlx::query_as::<_, ChannelRow>(
         "INSERT INTO channels (id, guild_id, name, kind, position)
          VALUES ($1, $2, $3, $4, $5)
-         RETURNING *"
+         RETURNING *",
     )
-        .bind(id)
-        .bind(guild_id)
-        .bind(name)
-        .bind(kind)
-        .bind(position)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Insert channel: {}", e)))
+    .bind(id)
+    .bind(guild_id)
+    .bind(name)
+    .bind(kind)
+    .bind(position)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Insert channel: {}", e)))
 }
 
 pub async fn find_by_guild(pool: &PgPool, guild_id: i64) -> Result<Vec<ChannelRow>, AppError> {
     sqlx::query_as::<_, ChannelRow>(
-        "SELECT * FROM channels WHERE guild_id = $1 ORDER BY position, created_at"
+        "SELECT * FROM channels WHERE guild_id = $1 ORDER BY position, created_at",
     )
-        .bind(guild_id)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
+    .bind(guild_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
 }
 
 pub async fn find_by_id(pool: &PgPool, id: i64) -> Result<Option<ChannelRow>, AppError> {
-    sqlx::query_as::<_, ChannelRow>(
-        "SELECT * FROM channels WHERE id = $1"
-    )
+    sqlx::query_as::<_, ChannelRow>("SELECT * FROM channels WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await

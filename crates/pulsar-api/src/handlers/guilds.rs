@@ -1,6 +1,6 @@
 use axum::{extract::State, Json};
 use pulsar_common::error::AppError;
-use pulsar_db::repo::{guilds, channels as channels_repo};
+use pulsar_db::repo::{channels as channels_repo, guilds};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -31,7 +31,11 @@ pub async fn create_guild(
         ));
     }
 
-    let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let user_id: i64 = auth
+        .claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::Unauthorized)?;
     let guild_id = chrono::Utc::now().timestamp_millis();
 
     let guild = guilds::insert(&state.db, guild_id, &payload.name, user_id).await?;
@@ -54,7 +58,11 @@ pub async fn list_guilds(
     auth: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<GuildResponse>>, AppError> {
-    let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let user_id: i64 = auth
+        .claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::Unauthorized)?;
 
     let rows = guilds::find_by_user(&state.db, user_id).await?;
 

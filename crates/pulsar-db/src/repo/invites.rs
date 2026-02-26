@@ -1,5 +1,5 @@
-use sqlx::PgPool;
 use pulsar_common::error::AppError;
+use sqlx::PgPool;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct InviteRow {
@@ -23,7 +23,7 @@ pub async fn insert(
     sqlx::query_as::<_, InviteRow>(
         "INSERT INTO invites (code, guild_id, creator_id, max_uses, expires_at)
              VALUES ($1, $2, $3, $4, $5)
-             RETURNING *"
+             RETURNING *",
     )
     .bind(code)
     .bind(guild_id)
@@ -36,13 +36,11 @@ pub async fn insert(
 }
 
 pub async fn find_by_code(pool: &PgPool, code: &str) -> Result<Option<InviteRow>, AppError> {
-    sqlx::query_as::<_, InviteRow>(
-        "SELECT * FROM invites WHERE code = $1",
-    )
-    .bind(code)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
+    sqlx::query_as::<_, InviteRow>("SELECT * FROM invites WHERE code = $1")
+        .bind(code)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
 }
 
 pub async fn find_by_guild(pool: &PgPool, guild_id: i64) -> Result<Vec<InviteRow>, AppError> {
@@ -61,7 +59,7 @@ pub async fn use_invite(pool: &PgPool, code: &str) -> Result<bool, AppError> {
          WHERE code = $1
            AND (max_uses IS NULL OR uses < max_uses)
            AND (expires_at IS NULL OR expires_at > NOW())
-         RETURNING guild_id"
+         RETURNING guild_id",
     )
     .bind(code)
     .fetch_optional(pool)
@@ -72,14 +70,12 @@ pub async fn use_invite(pool: &PgPool, code: &str) -> Result<bool, AppError> {
 }
 
 pub async fn delete(pool: &PgPool, code: &str, guild_id: i64) -> Result<bool, AppError> {
-    let result = sqlx::query(
-        "DELETE FROM invites WHERE code = $1 AND guild_id = $2"
-    )
-    .bind(code)
-    .bind(guild_id)
-    .execute(pool)
-    .await
-    .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))?;
+    let result = sqlx::query("DELETE FROM invites WHERE code = $1 AND guild_id = $2")
+        .bind(code)
+        .bind(guild_id)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))?;
 
     Ok(result.rows_affected() > 0)
 }

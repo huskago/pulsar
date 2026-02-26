@@ -1,7 +1,10 @@
 use axum::{extract::State, Json};
 use pulsar_common::{
     error::AppError,
-    models::{snowflake::Snowflake, user::{User, UserStatus}},
+    models::{
+        snowflake::Snowflake,
+        user::{User, UserStatus},
+    },
 };
 use pulsar_db::repo::users;
 

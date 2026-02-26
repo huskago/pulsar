@@ -1,4 +1,5 @@
 use super::{message::Message, user::UserStatus};
+use crate::models::message::AttachmentPayload;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,8 +15,17 @@ pub enum ServerEvent {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum ClientEvent {
-    Identify { token: String },
+    Identify {
+        token: String,
+    },
     Heartbeat,
-    SendMessage { channel_id: String, content: String },
-    StartTyping { channel_id: String },
+    SendMessage {
+        channel_id: String,
+        content: String,
+        #[serde(default)]
+        attachments: Vec<AttachmentPayload>,
+    },
+    StartTyping {
+        channel_id: String,
+    },
 }

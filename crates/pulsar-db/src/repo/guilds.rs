@@ -93,7 +93,7 @@ pub async fn add_member(pool: &PgPool, guild_id: i64, user_id: i64) -> Result<()
     sqlx::query(
         "INSERT INTO guild_members (guild_id, user_id)
          VALUES ($1, $2)
-         ON CONFLICT (guild_id, user_id) DO NOTHING"
+         ON CONFLICT (guild_id, user_id) DO NOTHING",
     )
     .bind(guild_id)
     .bind(user_id)

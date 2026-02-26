@@ -1,7 +1,7 @@
+use crate::connection::ConnectionManager;
 use pulsar_auth::jwt::JwtManager;
 use pulsar_messaging::nats_client::NatsClient;
 use sqlx::PgPool;
-use crate::connection::ConnectionManager;
 
 #[derive(Clone)]
 pub struct GatewayState {

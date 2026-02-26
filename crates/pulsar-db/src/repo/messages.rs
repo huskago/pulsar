@@ -1,5 +1,5 @@
-use sqlx::PgPool;
 use pulsar_common::error::AppError;
+use sqlx::PgPool;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct MessageRow {
@@ -21,15 +21,15 @@ pub async fn insert(
     sqlx::query_as::<_, MessageRow>(
         "INSERT INTO messages (id, channel_id, author_id, content)
          VALUES ($1, $2, $3, $4)
-         RETURNING *"
+         RETURNING *",
     )
-        .bind(id)
-        .bind(channel_id)
-        .bind(author_id)
-        .bind(content)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Insert message: {}", e)))
+    .bind(id)
+    .bind(channel_id)
+    .bind(author_id)
+    .bind(content)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Insert message: {}", e)))
 }
 
 pub async fn find_by_channel(
@@ -43,27 +43,27 @@ pub async fn find_by_channel(
             sqlx::query_as::<_, MessageRow>(
                 "SELECT * FROM messages
                  WHERE channel_id = $1 AND id < $2
-                 ORDER BY id DESC
-                 LIMIT $3"
+                 ORDER BY id ASC
+                 LIMIT $3",
             )
-                .bind(channel_id)
-                .bind(before_id)
-                .bind(limit)
-                .fetch_all(pool)
-                .await
+            .bind(channel_id)
+            .bind(before_id)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
         }
         None => {
             sqlx::query_as::<_, MessageRow>(
                 "SELECT * FROM messages
                  WHERE channel_id = $1
-                 ORDER BY id DESC
-                 LIMIT $2"
+                 ORDER BY id ASC
+                 LIMIT $2",
             )
-                .bind(channel_id)
-                .bind(limit)
-                .fetch_all(pool)
-                .await
+            .bind(channel_id)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
         }
     }
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
 }

@@ -1,13 +1,13 @@
+use crate::{middleware::auth::AuthUser, state::AppState};
 use axum::{
     extract::{Path, State},
     Json,
 };
-use pulsar_common::{error::AppError, };
+use pulsar_common::error::AppError;
+use pulsar_common::utils::generate_invite_code;
 use pulsar_db::repo::{guilds, invites};
 use serde::{Deserialize, Serialize};
 use tracing::info;
-use pulsar_common::utils::generate_invite_code;
-use crate::{middleware::auth::AuthUser, state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateInvite {
@@ -33,7 +33,11 @@ pub async fn create_invite(
     Path(guild_id): Path<String>,
     Json(payload): Json<CreateInvite>,
 ) -> Result<Json<InviteResponse>, AppError> {
-    let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let user_id: i64 = auth
+        .claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::Unauthorized)?;
     let guild_id: i64 = guild_id
         .parse()
         .map_err(|_| AppError::BadRequest("Invalid guild ID".into()))?;
@@ -48,9 +52,9 @@ pub async fn create_invite(
 
     let code = generate_invite_code(10);
 
-    let expires_at = payload.max_age.map(|seconds| {
-        chrono::Utc::now() + chrono::Duration::seconds(seconds)
-    });
+    let expires_at = payload
+        .max_age
+        .map(|seconds| chrono::Utc::now() + chrono::Duration::seconds(seconds));
 
     let invite = invites::insert(
         &state.db,
@@ -81,7 +85,11 @@ pub async fn list_invites(
     State(state): State<AppState>,
     Path(guild_id): Path<String>,
 ) -> Result<Json<Vec<InviteResponse>>, AppError> {
-    let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let user_id: i64 = auth
+        .claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::Unauthorized)?;
     let guild_id: i64 = guild_id
         .parse()
         .map_err(|_| AppError::BadRequest("Invalid guild ID".into()))?;
@@ -154,7 +162,11 @@ pub async fn join_invite(
     State(state): State<AppState>,
     Path(code): Path<String>,
 ) -> Result<Json<InviteResponse>, AppError> {
-    let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let user_id: i64 = auth
+        .claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::Unauthorized)?;
 
     let invite = invites::find_by_code(&state.db, &code)
         .await?
@@ -173,7 +185,9 @@ pub async fn join_invite(
     }
 
     if guilds::is_member(&state.db, invite.guild_id, user_id).await? {
-        return Err(AppError::BadRequest("Already a member of this guild".into()));
+        return Err(AppError::BadRequest(
+            "Already a member of this guild".into(),
+        ));
     }
 
     let used = invites::use_invite(&state.db, &code).await?;

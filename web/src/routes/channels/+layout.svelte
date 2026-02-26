@@ -23,14 +23,24 @@
 	let showCreateChannel = $state(false);
 	let newChannelName = $state('');
 	let newChannelKind = $state<'text' | 'voice'>('text');
+	let initialized = $state(false);
 
 	onMount(async () => {
-		if (!auth.user) {
+		if (!auth.ready) {
+			auth.loadFromStorage();
+			const valid = await auth.validateAndConnect();
+			if (!valid) {
+				goto('/auth');
+				return;
+			}
+		} else if (!auth.user) {
 			goto('/auth');
 			return;
 		}
+
 		messages.init();
 		await loadGuilds();
+		initialized = true;
 	});
 
 	async function loadGuilds() {
@@ -48,7 +58,6 @@
 		selectedGuild = guild;
 		try {
 			channels = await api.listChannels(guild.id);
-			// Naviguer vers le premier channel text du guild
 			const firstText = channels.find((c) => c.kind === 'text');
 			if (firstText) {
 				goto(`/channels/${firstText.id}`);
@@ -90,7 +99,6 @@
 			await api.createChannel(selectedGuild.id, newChannelName.trim(), newChannelKind);
 			newChannelName = '';
 			showCreateChannel = false;
-			// Recharger les channels
 			channels = await api.listChannels(selectedGuild.id);
 		} catch (e) {
 			console.error('Failed to create channel', e);
@@ -102,6 +110,14 @@
 	}
 </script>
 
+{#if !initialized}
+	<div class="flex h-full items-center justify-center">
+		<div class="flex flex-col items-center gap-3">
+			<div class="h-8 w-8 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-500"></div>
+			<p class="text-sm text-muted-foreground">Loading Pulsar...</p>
+		</div>
+	</div>
+{:else}
 <div class="flex h-full">
 	<!-- Guild sidebar -->
 	<aside class="flex w-16 flex-col items-center gap-2 bg-zinc-950 py-3">
@@ -291,3 +307,4 @@
 		{@render children()}
 	</main>
 </div>
+{/if}
