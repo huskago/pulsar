@@ -6,8 +6,10 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
-	import { tick, onMount } from 'svelte';
+	import { tick } from 'svelte';
 	import type { Message } from '$lib/types/models';
+	import VideoGrid from '$lib/components/VideoGrid.svelte';
+	import { voice } from '$lib/services/voice.svelte';
 
 	let channelId = $derived(page.params.id ?? '');
 	let channelMessages = $derived(messages.getMessages(channelId));
@@ -105,6 +107,12 @@
 </div>
 
 <Separator />
+
+{#if voice.connected && voice.participants.some(p => p.videoTracks.length > 0)}
+	<div class="max-h-[50vh] overflow-y-auto border-b border-zinc-800">
+		<VideoGrid />
+	</div>
+	{/if}
 
 <div bind:this={messagesContainer} class="flex-1 space-y-1 overflow-y-auto p-4">
 	{#if loadingHistory}

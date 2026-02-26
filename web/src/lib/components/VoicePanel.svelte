@@ -7,13 +7,10 @@
 {#if voice.connected || voice.connecting}
 	<Separator />
 	<div class="space-y-2 p-3">
-		<!-- Status -->
 		<div class="flex items-center justify-between">
-			<div>
-				<p class="text-xs font-semibold text-green-500">
-					{voice.connecting ? 'Connecting...' : 'Voice Connected'}
-				</p>
-			</div>
+			<p class="text-xs font-semibold text-green-500">
+				{voice.connecting ? 'Connecting...' : 'Voice Connected'}
+			</p>
 			<button
 				class="rounded p-1 text-red-400 hover:bg-zinc-800 hover:text-red-300"
 				onclick={() => voice.leave()}
@@ -23,7 +20,6 @@
 			</button>
 		</div>
 
-		<!-- Participants -->
 		<div class="space-y-1">
 			{#each voice.participants as participant (participant.identity)}
 				<div class="flex items-center gap-2 rounded px-2 py-1 text-sm {participant.isSpeaking ? 'bg-green-500/10' : ''}">
@@ -42,19 +38,43 @@
 					{#if participant.isMuted}
 						<span class="text-xs text-red-400" title="Muted">🔇</span>
 					{/if}
+					{#if participant.videoTracks.some(t => t.kind === 'video')}
+						<span class="text-xs" title="Camera on">📷</span>
+					{/if}
+					{#if participant.videoTracks.some(t => t.kind === 'screen')}
+						<span class="text-xs" title="Screen sharing">🖥️</span>
+					{/if}
 				</div>
 			{/each}
 		</div>
 
-		<!-- Controls -->
 		<div class="flex gap-1">
 			<Button
 				size="sm"
 				variant={voice.isMuted ? 'destructive' : 'outline'}
 				class="flex-1"
 				onclick={() => voice.toggleMute()}
+				title={voice.isMuted ? 'Unmute' : 'Mute'}
 			>
-				{voice.isMuted ? '🔇 Unmute' : '🎤 Mute'}
+				{voice.isMuted ? '🔇' : '🎤'}
+			</Button>
+			<Button
+				size="sm"
+				variant={voice.isCameraOn ? 'default' : 'outline'}
+				class="flex-1"
+				onclick={() => voice.toggleCamera()}
+				title={voice.isCameraOn ? 'Turn off camera' : 'Turn on camera'}
+			>
+				{voice.isCameraOn ? '📷' : '📷'}
+			</Button>
+			<Button
+				size="sm"
+				variant={voice.isScreenSharing ? 'default' : 'outline'}
+				class="flex-1"
+				onclick={() => voice.toggleScreenShare()}
+				title={voice.isScreenSharing ? 'Stop sharing' : 'Share screen'}
+			>
+				🖥️
 			</Button>
 		</div>
 	</div>
