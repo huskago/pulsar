@@ -15,6 +15,9 @@
 	let showCreateGuild = $state(false);
 	let newGuildName = $state('');
 
+	let inviteCode = $state('');
+	let showInvite = $state(false);
+
 	onMount(async () => {
 		if (!auth.user) {
 			goto('/auth');
@@ -63,6 +66,21 @@
 			console.error('Failed to create guild', e);
 		}
 	}
+
+	async function handleCreateInvite() {
+		if (!selectedGuild) return;
+		try {
+			const invite = await api.createInvite(selectedGuild.id);
+			inviteCode = `${window.location.origin}/invite/${invite.code}`;
+			showInvite = true;
+		} catch (e) {
+			console.error('Failed to create invite', e);
+		}
+	}
+
+	function copyInvite() {
+		navigator.clipboard.writeText(inviteCode);
+	}
 </script>
 
 <div class="flex h-full">
@@ -91,10 +109,42 @@
 
 	<!-- Channel sidebar -->
 	<aside class="flex w-56 flex-col bg-zinc-900">
-		<div class="flex h-12 items-center px-4 font-semibold shadow-md">
+		<div class="flex h-12 items-center justify-between px-4 font-semibold shadow-md">
 			{selectedGuild?.name ?? 'Pulsar'}
+			{#if selectedGuild}
+				<button
+					class="text-xs text-muted-foreground hover:text-zinc-100"
+					onclick={handleCreateInvite}
+					title="Create invite"
+				>
+					+Invite
+				</button>
+			{/if}
 		</div>
 		<Separator />
+
+		{#if showInvite}
+			<div class="space-y-2 p-3">
+				<p class="text-xs text-muted-foreground">Share this link:</p>
+				<div class="flex gap-1">
+					<input
+						readonly
+						value={inviteCode}
+						class="flex-1 rounded bg-zinc-800 px-2 py-1.5 text-xs outline-none"
+					/>
+					<Button size="sm" variant="outline" onclick={copyInvite}>
+						Copy
+					</Button>
+				</div>
+				<button
+					class="text-xs text-muted-foreground hover:text-zinc-100"
+					onclick={() => (showInvite = false)}
+				>
+					Dismiss
+				</button>
+			</div>
+			<Separator />
+		{/if}
 
 		{#if showCreateGuild}
 			<div class="space-y-2 p-3">

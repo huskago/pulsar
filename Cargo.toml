@@ -39,3 +39,4 @@ sqlx = { version = "0.8", features = [
     "chrono",
     "migrate",
 ] }
+rand = "0.10"

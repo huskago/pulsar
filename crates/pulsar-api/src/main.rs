@@ -11,9 +11,8 @@ use tracing_subscriber::EnvFilter;
 mod handlers;
 mod middleware;
 mod state;
-mod store;
 
-use handlers::{auth, users, guilds, channels};
+use handlers::{auth, users, guilds, channels, invites};
 use state::AppState;
 
 #[derive(Serialize)]
@@ -55,6 +54,7 @@ async fn main() {
         .route("/health", get(health))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
+        .route("/invites/{code}", get(invites::get_invite))
         // Protected routes
         .route("/users/me", get(users::get_me))
         .route("/guilds", get(guilds::list_guilds).post(guilds::create_guild))
@@ -62,6 +62,9 @@ async fn main() {
             get(channels::list_channels).post(channels::create_channel))
         .route("/channels/{channel_id}/messages",
                get(channels::list_messages))
+        .route("/guilds/{guild_id}/invites",
+               get(invites::list_invites).post(invites::create_invite))
+        .route("/invites/{code}/join", post(invites::join_invite))
         .with_state(state)
         .layer(cors);
 

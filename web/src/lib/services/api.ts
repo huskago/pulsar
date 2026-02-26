@@ -26,6 +26,16 @@ export interface MessageResponse {
 	edited_timestamp: number | null;
 }
 
+export interface InviteResponse {
+	code: string;
+	guild_id: string;
+	guild_name: string;
+	creator_id: string;
+	max_uses: number | null;
+	uses: number;
+	expires_at: string | null;
+}
+
 class ApiService {
 	private token: string | null = null;
 
@@ -117,6 +127,24 @@ class ApiService {
 		if (limit) params.set('limit', limit.toString());
 		if (before) params.set('before', before);
 		return this.request(`/channels/${channelId}/messages?${params}`);
+	}
+
+	// Invites
+	async createInvite(guildId: string, maxUses?: number, maxAge?: number): Promise<InviteResponse> {
+		return this.request(`/guilds/${guildId}/invites`, {
+			method: 'POST',
+			body: JSON.stringify({ max_uses: maxUses ?? null, max_age: maxAge ?? null })
+		});
+	}
+
+	async getInvite(code: string): Promise<InviteResponse> {
+		return this.request(`/invites/${code}`);
+	}
+
+	async joinInvite(code: string): Promise<InviteResponse> {
+		return this.request(`/invites/${code}/join`, {
+			method: 'POST'
+		});
 	}
 }
 

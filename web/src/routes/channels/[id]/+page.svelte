@@ -130,7 +130,7 @@
 							{formatTime(msg.timestamp)}
 						</span>
 					</div>
-					<p class="break-words text-sm text-zinc-300">{msg.content}</p>
+					<p class="wrap-break-word text-sm text-zinc-300">{msg.content}</p>
 				</div>
 			</div>
 		{/each}

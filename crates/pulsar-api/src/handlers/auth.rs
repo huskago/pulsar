@@ -1,5 +1,5 @@
 use axum::{extract::State, Json};
-use pulsar_auth::{jwt::JwtManager, password};
+use pulsar_auth::password;
 use pulsar_common::{
     error::AppError,
     models::{

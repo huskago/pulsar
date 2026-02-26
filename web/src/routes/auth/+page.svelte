@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
+	import { api } from '$lib/services/api';
 
 	let mode: 'login' | 'register' = $state('login');
 	let username = $state('');
@@ -19,6 +20,17 @@
 			} else {
 				await auth.login(email, password);
 			}
+
+			const pendingInvite = localStorage.getItem('pulsar_pending_invite');
+			if (pendingInvite) {
+				localStorage.removeItem('pulsar_pending_invite');
+				try {
+					await api.joinInvite(pendingInvite);
+				} catch (e) {
+					console.error('Failed to join pending invite', e);
+				}
+			}
+
 			goto('/channels');
 		} catch (e) {
 			errorMsg = e instanceof Error ? e.message : 'Something went wrong';

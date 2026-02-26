@@ -88,3 +88,18 @@ pub async fn is_member(pool: &PgPool, guild_id: i64, user_id: i64) -> Result<boo
 
     Ok(row)
 }
+
+pub async fn add_member(pool: &PgPool, guild_id: i64, user_id: i64) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO guild_members (guild_id, user_id)
+         VALUES ($1, $2)
+         ON CONFLICT (guild_id, user_id) DO NOTHING"
+    )
+    .bind(guild_id)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Add member: {}", e)))?;
+
+    Ok(())
+}
