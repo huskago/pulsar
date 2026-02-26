@@ -1,5 +1,5 @@
-use pulsar_auth::jwt::JwtManager;
 use crate::store::memory::MemoryStore;
+use pulsar_auth::jwt::JwtManager;
 
 #[derive(Clone)]
 pub struct AppState {

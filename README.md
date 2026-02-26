@@ -13,11 +13,13 @@ An open-source, real-time communication platform built with Rust and SvelteKit.
 - **Message broker**: NATS JetStream
 
 ## Building
+
 ```bash
 cargo build
 ```
 
 ## Running
+
 ```bash
 RUST_LOG=info cargo run -p pulsar-api
 ```

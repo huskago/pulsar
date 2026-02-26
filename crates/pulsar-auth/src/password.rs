@@ -1,4 +1,7 @@
-use argon2::{password_hash::{rand_core::OsRng, SaltString}, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use argon2::{
+    password_hash::{rand_core::OsRng, SaltString}, Argon2, PasswordHash, PasswordHasher,
+    PasswordVerifier,
+};
 use pulsar_common::error::AppError;
 use tokio::task::spawn_blocking;
 

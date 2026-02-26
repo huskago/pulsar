@@ -1,5 +1,5 @@
 use axum::{extract::State, Json};
-use pulsar_auth::{password};
+use pulsar_auth::password;
 use pulsar_common::{
     error::AppError,
     models::{
@@ -83,11 +83,7 @@ pub async fn login(
         .ok_or(AppError::Unauthorized)?;
 
     // 2. Verify the password
-    let valid = password::verify_password(
-        payload.password,
-        user.password_hash.clone(),
-    )
-    .await?;
+    let valid = password::verify_password(payload.password, user.password_hash.clone()).await?;
 
     if !valid {
         return Err(AppError::Unauthorized);

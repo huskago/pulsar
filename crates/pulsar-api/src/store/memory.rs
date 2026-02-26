@@ -1,11 +1,8 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::collections::HashMap;
 
-use pulsar_common::models::{
-    snowflake::Snowflake,
-    user::User,
-};
+use pulsar_common::models::{snowflake::Snowflake, user::User};
 
 #[derive(Clone, Default)]
 pub struct MemoryStore {

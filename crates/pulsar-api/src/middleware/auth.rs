@@ -1,7 +1,4 @@
-use axum::{
-    extract::FromRequestParts,
-    http::request::Parts,
-};
+use axum::{extract::FromRequestParts, http::request::Parts};
 
 use pulsar_auth::jwt::Claims;
 use pulsar_common::error::AppError;

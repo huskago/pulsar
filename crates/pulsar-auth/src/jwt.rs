@@ -1,7 +1,5 @@
 use chrono::{Duration, Utc};
-use jsonwebtoken::{
-    DecodingKey, EncodingKey, Header, TokenData, Validation,
-};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 
 use pulsar_common::error::AppError;

@@ -1,4 +1,7 @@
-use axum::{routing::{get, post}, Json, Router};
+use axum::{
+    routing::{get, post}, Json,
+    Router,
+};
 use pulsar_auth::jwt::JwtManager;
 use pulsar_common::config::AppConfig;
 use serde::Serialize;
@@ -11,10 +14,10 @@ mod middleware;
 mod state;
 mod store;
 
+use crate::handlers::users;
 use handlers::auth;
 use state::AppState;
 use store::memory::MemoryStore;
-use crate::handlers::users;
 
 #[derive(Serialize)]
 struct HealthResponse {

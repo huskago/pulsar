@@ -1,14 +1,11 @@
+use crate::{middleware::auth::AuthUser, state::AppState};
 use axum::{extract::State, Json};
 use pulsar_common::{
     error::AppError,
     models::{snowflake::Snowflake, user::User},
 };
-use crate::{middleware::auth::AuthUser,state::AppState};
 
-pub async fn get_me(
-    auth: AuthUser,
-    State(state): State<AppState>,
-) -> Result<Json<User>, AppError> {
+pub async fn get_me(auth: AuthUser, State(state): State<AppState>) -> Result<Json<User>, AppError> {
     let user_id: i64 = auth
         .claims
         .sub
