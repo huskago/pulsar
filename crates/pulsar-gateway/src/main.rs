@@ -1,5 +1,6 @@
 use axum::{routing::get, Router};
 use pulsar_auth::jwt::JwtManager;
+use pulsar_db::pool::{self, DatabaseConfig};
 use pulsar_messaging::nats_client::{NatsClient, NatsConfig};
 use tokio::net::TcpListener;
 use tracing::info;
@@ -20,6 +21,11 @@ async fn main() {
 
     let jwt = JwtManager::new("pulsar-dev-secret");
 
+    let db_config = DatabaseConfig::default();
+    let db = pool::create_pool(&db_config)
+        .await
+        .expect("Failed to connect to PostgreSQL");
+
     let nats_config = NatsConfig::default();
     let nats = NatsClient::connect(&nats_config)
         .await
@@ -29,6 +35,7 @@ async fn main() {
         connections: ConnectionManager::new(),
         jwt,
         nats,
+        db,
     };
 
     let app = Router::new()

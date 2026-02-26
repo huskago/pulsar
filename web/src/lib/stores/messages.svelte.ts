@@ -44,6 +44,10 @@ function getMessages(channelId: string): Message[] {
 	return messagesByChannel[channelId] ?? [];
 }
 
+function setMessages(channelId: string, msgs: Message[]) {
+	messagesByChannel[channelId] = msgs;
+}
+
 function getTypingUsers(channelId: string): string[] {
 	return typingByChannel[channelId] ? [...typingByChannel[channelId]] : [];
 }
@@ -56,5 +60,6 @@ export const messages = {
 	init,
 	getMessages,
 	getTypingUsers,
-	sendMessage
+	sendMessage,
+	setMessages
 };

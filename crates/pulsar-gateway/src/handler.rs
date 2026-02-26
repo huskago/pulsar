@@ -15,6 +15,7 @@ use pulsar_common::models::{
 use pulsar_messaging::nats_client::NatsClient;
 use pulsar_messaging::subjects;
 use std::time::Duration;
+use sqlx::PgPool;
 use tracing::{error, info, warn};
 
 // GET /gateway
@@ -62,30 +63,53 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         return;
     }
 
-    let nats_sub = match state.nats.subscribe("chat.>").await {
+    let nats_chat_sub = match state.nats.subscribe("chat.>").await {
         Ok(sub) => sub,
         Err(e) => {
-            error!("Failed to subscribe to NATS: {}", e);
+            error!("Failed to subscribe to NATS chat: {}", e);
             state.connections.remove(&user_id).await;
             return;
         }
     };
 
-    // NATS task → ConnectionManager
-    let nats_connections = state.connections.clone();
-    let nats_user_id = user_id.clone();
-    let nats_task = tokio::spawn(async move {
-        let mut nats_sub = nats_sub;
-        while let Some(message) = nats_sub.next().await {
-            let event: ServerEvent = match serde_json::from_slice(&message.payload) {
+    let nats_typing_sub = match state.nats.subscribe("typing.>").await {
+        Ok(sub) => sub,
+        Err(e) => {
+            error!("Failed to subscribe to NATS typing: {}", e);
+            state.connections.remove(&user_id).await;
+            return;
+        }
+    };
+
+    // NATS chat task -> ConnectionManager
+    let chat_connections = state.connections.clone();
+    let chat_user_id = user_id.clone();
+    let nats_chat_task = tokio::spawn(async move {
+        let mut sub = nats_chat_sub;
+        while let Some(msg) = sub.next().await {
+            let event: ServerEvent = match serde_json::from_slice(&msg.payload) {
                 Ok(e) => e,
                 Err(_) => continue,
             };
-            nats_connections.send_to_user(&nats_user_id, event).await;
+            chat_connections.send_to_user(&chat_user_id, event).await;
         }
     });
 
-    // Send task: rx → WebSocket
+    // NATS typing task -> ConnectionManager
+    let typing_connections = state.connections.clone();
+    let typing_user_id = user_id.clone();
+    let nats_typing_task = tokio::spawn(async move {
+        let mut sub = nats_typing_sub;
+        while let Some(msg) = sub.next().await {
+            let event: ServerEvent = match serde_json::from_slice(&msg.payload) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            typing_connections.send_to_user(&typing_user_id, event).await;
+        }
+    });
+
+    // Send task: rx -> WebSocket
     let send_task = tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
             let json = match serde_json::to_string(&event) {
@@ -102,15 +126,16 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     });
 
-    // Receive task: WebSocket → NATS
+    // Receive task: WebSocket -> NATS
     let recv_nats = state.nats.clone();
     let recv_connections = state.connections.clone();
+    let recv_db = state.db.clone();
     let recv_user_id = user_id.clone();
     let recv_task = tokio::spawn(async move {
         while let Some(Ok(message)) = receiver.next().await {
             match message {
                 Message::Text(text) => {
-                    handle_client_message(&text, &recv_user_id, &recv_nats, &recv_connections)
+                    handle_client_message(&text, &recv_user_id, &recv_nats, &recv_connections, &recv_db)
                         .await;
                 }
                 Message::Close(_) => break,
@@ -122,7 +147,8 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
     tokio::select! {
         _ = send_task => {},
         _ = recv_task => {},
-        _ = nats_task => {},
+        _ = nats_chat_task => {},
+        _ = nats_typing_task => {},
     }
 
     state.connections.remove(&user_id).await;
@@ -159,6 +185,7 @@ async fn handle_client_message(
     user_id: &str,
     nats: &NatsClient,
     connections: &ConnectionManager,
+    db: &PgPool,
 ) {
     let event: ClientEvent = match serde_json::from_str(text) {
         Ok(e) => e,
@@ -178,10 +205,30 @@ async fn handle_client_message(
             channel_id,
             content,
         } => {
+            let ch_id: i64 = match channel_id.parse() {
+                Ok(id) => id,
+                Err(_) => return,
+            };
+            let u_id: i64 = match user_id.parse() {
+                Ok(id) => id,
+                Err(_) => return,
+            };
+
+            let msg_id = chrono::Utc::now().timestamp_millis();
+
+            if let Err(e) = pulsar_db::repo::messages::insert(
+                db, msg_id, ch_id, u_id, &content,
+            )
+            .await
+            {
+                error!("Failed to persist message: {}", e);
+                return;
+            }
+
             let message = pulsar_common::models::message::Message {
-                id: Snowflake(chrono::Utc::now().timestamp_millis()),
-                channel_id: Snowflake(channel_id.parse().unwrap_or(0)),
-                author_id: Snowflake(user_id.parse().unwrap_or(0)),
+                id: Snowflake(msg_id),
+                channel_id: Snowflake(ch_id),
+                author_id: Snowflake(u_id),
                 content,
                 timestamp: chrono::Utc::now().timestamp_millis(),
                 edited_timestamp: None,

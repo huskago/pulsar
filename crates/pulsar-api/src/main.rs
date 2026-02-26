@@ -13,7 +13,7 @@ mod middleware;
 mod state;
 mod store;
 
-use handlers::{auth, users};
+use handlers::{auth, users, guilds, channels};
 use state::AppState;
 
 #[derive(Serialize)]
@@ -57,6 +57,11 @@ async fn main() {
         .route("/auth/login", post(auth::login))
         // Protected routes
         .route("/users/me", get(users::get_me))
+        .route("/guilds", get(guilds::list_guilds).post(guilds::create_guild))
+        .route("/guilds/{guild_id}/channels",
+            get(channels::list_channels).post(channels::create_channel))
+        .route("/channels/{channel_id}/messages",
+               get(channels::list_messages))
         .with_state(state)
         .layer(cors);
 
