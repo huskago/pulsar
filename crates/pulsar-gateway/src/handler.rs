@@ -12,6 +12,8 @@ use pulsar_common::models::{
     event::{ClientEvent, ServerEvent},
     snowflake::Snowflake,
 };
+use pulsar_messaging::nats_client::NatsClient;
+use pulsar_messaging::subjects;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
@@ -60,9 +62,28 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         return;
     }
 
-    // 4. Two parallel tasks
-    // - One that reads messages from the client (receiver → processing)
-    // - One that sends events to the client (rx → sender)
+    let nats_sub = match state.nats.subscribe("chat.>").await {
+        Ok(sub) => sub,
+        Err(e) => {
+            error!("Failed to subscribe to NATS: {}", e);
+            state.connections.remove(&user_id).await;
+            return;
+        }
+    };
+
+    // NATS task → ConnectionManager
+    let nats_connections = state.connections.clone();
+    let nats_user_id = user_id.clone();
+    let nats_task = tokio::spawn(async move {
+        let mut nats_sub = nats_sub;
+        while let Some(message) = nats_sub.next().await {
+            let event: ServerEvent = match serde_json::from_slice(&message.payload) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            nats_connections.send_to_user(&nats_user_id, event).await;
+        }
+    });
 
     // Send task: rx → WebSocket
     let send_task = tokio::spawn(async move {
@@ -81,15 +102,16 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     });
 
-    // Receive task: WebSocket → processing
-    let connections = state.connections.clone();
+    // Receive task: WebSocket → NATS
+    let recv_nats = state.nats.clone();
+    let recv_connections = state.connections.clone();
     let recv_user_id = user_id.clone();
-
     let recv_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = receiver.next().await {
-            match msg {
+        while let Some(Ok(message)) = receiver.next().await {
+            match message {
                 Message::Text(text) => {
-                    handle_client_message(&text, &recv_user_id, &connections).await;
+                    handle_client_message(&text, &recv_user_id, &recv_nats, &recv_connections)
+                        .await;
                 }
                 Message::Close(_) => break,
                 _ => {}
@@ -100,6 +122,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
     tokio::select! {
         _ = send_task => {},
         _ = recv_task => {},
+        _ = nats_task => {},
     }
 
     state.connections.remove(&user_id).await;
@@ -131,7 +154,12 @@ async fn wait_for_identity(
     Err("Connection closed before Identify".into())
 }
 
-async fn handle_client_message(text: &str, user_id: &str, connections: &ConnectionManager) {
+async fn handle_client_message(
+    text: &str,
+    user_id: &str,
+    nats: &NatsClient,
+    connections: &ConnectionManager,
+) {
     let event: ClientEvent = match serde_json::from_str(text) {
         Ok(e) => e,
         Err(e) => {
@@ -159,18 +187,24 @@ async fn handle_client_message(text: &str, user_id: &str, connections: &Connecti
                 edited_timestamp: None,
             };
 
-            // TODO: NATS
-            connections
-                .broadcast(ServerEvent::MessageCreate(message))
-                .await;
+            let event = ServerEvent::MessageCreate(message);
+            let payload = serde_json::to_vec(&event).unwrap();
+
+            let subject = subjects::chat_channel("default", &channel_id);
+
+            if let Err(e) = nats.publish_persistent(&subject, &payload).await {
+                error!("Failed to publish to NATS: {}", e);
+            }
         }
         ClientEvent::StartTyping { channel_id } => {
-            connections
-                .broadcast(ServerEvent::TypingStart {
-                    channel_id,
-                    user_id: user_id.to_string(),
-                })
-                .await;
+            let event = ServerEvent::TypingStart {
+                channel_id: channel_id.clone(),
+                user_id: user_id.to_string(),
+            };
+            let payload = serde_json::to_vec(&event).unwrap();
+
+            let subject = subjects::typing_channel("default", &channel_id);
+            let _ = nats.publish(&subject, &payload).await;
         }
         ClientEvent::Identify { .. } => {
             warn!("Received Identify after already authenticated");

@@ -1,7 +1,7 @@
 use super::{message::Message, user::UserStatus};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum ServerEvent {
     Hello { heartbeat_interval: u64 },

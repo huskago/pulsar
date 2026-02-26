@@ -1,5 +1,6 @@
 use axum::{routing::get, Router};
 use pulsar_auth::jwt::JwtManager;
+use pulsar_messaging::nats_client::{NatsClient, NatsConfig};
 use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -19,9 +20,15 @@ async fn main() {
 
     let jwt = JwtManager::new("pulsar-dev-secret");
 
+    let nats_config = NatsConfig::default();
+    let nats = NatsClient::connect(&nats_config)
+        .await
+        .expect("Failed to connect to NATS");
+
     let state = GatewayState {
         connections: ConnectionManager::new(),
         jwt,
+        nats,
     };
 
     let app = Router::new()

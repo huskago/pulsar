@@ -6,7 +6,6 @@ use tracing::{info, warn};
 
 #[derive(Debug, Clone)]
 pub struct ConnectionHandle {
-    pub user_id: String,
     pub sender: mpsc::UnboundedSender<ServerEvent>,
 }
 
@@ -24,7 +23,6 @@ impl ConnectionManager {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let handle = ConnectionHandle {
-            user_id: user_id.clone(),
             sender: tx,
         };
 
@@ -63,17 +61,6 @@ impl ConnectionManager {
                         "Failed to send to connection (likely closed)",
                     );
                 }
-            }
-        }
-    }
-
-    // TODO: NATS
-    pub async fn broadcast(&self, event: ServerEvent) {
-        let conns = self.connections.read().await;
-
-        for handles in conns.values() {
-            for handle in handles {
-                let _ = handle.sender.send(event.clone());
             }
         }
     }

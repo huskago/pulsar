@@ -4,7 +4,8 @@ members = [
     "crates/pulsar-common",
     "crates/pulsar-api",
     "crates/pulsar-auth",
-    "crates/pulsar-gateway"
+    "crates/pulsar-gateway",
+    "crates/pulsar-messaging",
 ]
 
 [workspace.package]
@@ -27,3 +28,5 @@ jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
+async-nats = "0.46.0"
+bytes = "1.11.1"
