@@ -79,11 +79,7 @@
 				{/if}
 
 				<Button type="submit" class="w-full cursor-pointer" disabled={auth.loading}>
-					{auth.loading
-						? 'Loading...'
-						: mode === 'login'
-							? 'Login'
-							: 'Create Account'}
+					{auth.loading ? 'Loading...' : mode === 'login' ? 'Login' : 'Create Account'}
 				</Button>
 			</form>
 		</Card.Content>
@@ -92,7 +88,7 @@
 			{#if mode === 'login'}
 				Don't have an account?
 				<button
-					class="ml-1 text-primary underline-offset-4 hover:underline cursor-pointer"
+					class="ml-1 cursor-pointer text-primary underline-offset-4 hover:underline"
 					onclick={() => (mode = 'register')}
 				>
 					Register
@@ -100,7 +96,7 @@
 			{:else}
 				Already have an account?
 				<button
-					class="ml-1 text-primary underline-offset-4 hover:underline cursor-pointer"
+					class="ml-1 cursor-pointer text-primary underline-offset-4 hover:underline"
 					onclick={() => (mode = 'login')}
 				>
 					Login

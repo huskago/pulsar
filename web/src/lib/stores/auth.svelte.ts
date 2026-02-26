@@ -64,10 +64,18 @@ function logout() {
 }
 
 export const auth = {
-	get user() { return user; },
-	get token() { return token; },
-	get loading() { return loading; },
-	get error() { return error; },
+	get user() {
+		return user;
+	},
+	get token() {
+		return token;
+	},
+	get loading() {
+		return loading;
+	},
+	get error() {
+		return error;
+	},
 	loadFromStorage,
 	register,
 	login,

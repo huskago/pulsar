@@ -3,6 +3,6 @@
 	let { children } = $props();
 </script>
 
-<div class="h-screen bg-background text-foreground dark">
+<div class="dark h-screen bg-background text-foreground">
 	{@render children()}
 </div>
