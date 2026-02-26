@@ -1,11 +1,9 @@
-use axum::{
-    routing::{get, post}, Json,
-    Router,
-};
+use axum::{routing::{get, post}, Json, Router};
 use pulsar_auth::jwt::JwtManager;
 use pulsar_common::config::AppConfig;
 use serde::Serialize;
 use tokio::net::TcpListener;
+use tower_http::cors::{CorsLayer, Any, Cors};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -14,8 +12,7 @@ mod middleware;
 mod state;
 mod store;
 
-use crate::handlers::users;
-use handlers::auth;
+use handlers::{auth, users};
 use state::AppState;
 use store::memory::MemoryStore;
 
@@ -39,13 +36,17 @@ async fn main() {
         .init();
 
     let config = AppConfig::default();
-
     let jwt = JwtManager::new("pulsar-dev-secret");
 
     let state = AppState {
         store: MemoryStore::new(),
         jwt,
     };
+
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
 
     let app = Router::new()
         // Public routes
@@ -54,7 +55,8 @@ async fn main() {
         .route("/auth/login", post(auth::login))
         // Protected routes
         .route("/users/me", get(users::get_me))
-        .with_state(state);
+        .with_state(state)
+        .layer(cors);
 
     let addr = format!("{}:{}", config.host, config.port);
     let listener = TcpListener::bind(&addr).await.unwrap();
