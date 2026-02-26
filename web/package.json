@@ -42,5 +42,8 @@
 		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.54.0",
 		"vite": "^7.3.1"
+	},
+	"dependencies": {
+		"livekit-client": "^2.17.2"
 	}
 }

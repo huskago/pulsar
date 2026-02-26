@@ -36,6 +36,11 @@ export interface InviteResponse {
 	expires_at: string | null;
 }
 
+export interface VoiceTokenResponse {
+	token: string;
+	url: string;
+}
+
 class ApiService {
 	private token: string | null = null;
 
@@ -144,6 +149,14 @@ class ApiService {
 	async joinInvite(code: string): Promise<InviteResponse> {
 		return this.request(`/invites/${code}/join`, {
 			method: 'POST'
+		});
+	}
+
+	// Voice
+	async getVoiceToken(channelId: string): Promise<VoiceTokenResponse> {
+		return this.request('/voice/token', {
+			method: 'POST',
+			body: JSON.stringify({ channel_id: channelId })
 		});
 	}
 }

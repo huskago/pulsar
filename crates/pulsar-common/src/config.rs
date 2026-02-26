@@ -14,3 +14,20 @@ impl Default for AppConfig {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct LiveKitConfig {
+    pub url: String,
+    pub api_key: String,
+    pub api_secret: String,
+}
+
+impl Default for LiveKitConfig {
+    fn default() -> Self {
+        Self {
+            url: "ws://localhost:7880".to_string(),
+            api_key: "devkey".to_string(),
+            api_secret: "secret".to_string(),
+        }
+    }
+}

@@ -1,6 +1,7 @@
 use axum::{routing::{get, post}, Json, Router};
+use axum::http::header;
 use pulsar_auth::jwt::JwtManager;
-use pulsar_common::config::AppConfig;
+use pulsar_common::config::{AppConfig, LiveKitConfig};
 use pulsar_db::pool::{self, DatabaseConfig};
 use serde::Serialize;
 use tokio::net::TcpListener;
@@ -12,7 +13,7 @@ mod handlers;
 mod middleware;
 mod state;
 
-use handlers::{auth, users, guilds, channels, invites};
+use handlers::{auth, users, guilds, channels, invites, voice};
 use state::AppState;
 
 #[derive(Serialize)]
@@ -42,12 +43,19 @@ async fn main() {
         .await
         .expect("Failed to connect to PostgreSQL");
 
-    let state = AppState { db, jwt };
+    let state = AppState {
+        db,
+        jwt,
+        livekit: LiveKitConfig::default(),
+    };
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_headers(vec![
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+        ]);
 
     let app = Router::new()
         // Public routes
@@ -65,6 +73,7 @@ async fn main() {
         .route("/guilds/{guild_id}/invites",
                get(invites::list_invites).post(invites::create_invite))
         .route("/invites/{code}/join", post(invites::join_invite))
+        .route("/voice/token", post(voice::get_voice_token))
         .with_state(state)
         .layer(cors);
 

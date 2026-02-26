@@ -6,6 +6,8 @@
 	import { onMount } from 'svelte';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { voice } from '$lib/services/voice.svelte';
+	import VoicePanel from '$lib/components/VoicePanel.svelte';
 
 	let { children } = $props();
 
@@ -17,6 +19,10 @@
 
 	let inviteCode = $state('');
 	let showInvite = $state(false);
+
+	let showCreateChannel = $state(false);
+	let newChannelName = $state('');
+	let newChannelKind = $state<'text' | 'voice'>('text');
 
 	onMount(async () => {
 		if (!auth.user) {
@@ -78,6 +84,19 @@
 		}
 	}
 
+	async function handleCreateChannel() {
+		if (!selectedGuild || !newChannelName.trim()) return;
+		try {
+			await api.createChannel(selectedGuild.id, newChannelName.trim(), newChannelKind);
+			newChannelName = '';
+			showCreateChannel = false;
+			// Recharger les channels
+			channels = await api.listChannels(selectedGuild.id);
+		} catch (e) {
+			console.error('Failed to create channel', e);
+		}
+	}
+
 	function copyInvite() {
 		navigator.clipboard.writeText(inviteCode);
 	}
@@ -88,7 +107,10 @@
 	<aside class="flex w-16 flex-col items-center gap-2 bg-zinc-950 py-3">
 		{#each guilds as guild (guild.id)}
 			<button
-				class="flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-bold transition-all hover:rounded-xl {selectedGuild?.id === guild.id ? 'rounded-xl bg-indigo-600' : 'bg-zinc-700 hover:bg-zinc-600'}"
+				class="flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-bold transition-all hover:rounded-xl {selectedGuild?.id ===
+				guild.id
+					? 'rounded-xl bg-indigo-600'
+					: 'bg-zinc-700 hover:bg-zinc-600'}"
 				onclick={() => selectGuild(guild)}
 				title={guild.name}
 			>
@@ -132,9 +154,7 @@
 						value={inviteCode}
 						class="flex-1 rounded bg-zinc-800 px-2 py-1.5 text-xs outline-none"
 					/>
-					<Button size="sm" variant="outline" onclick={copyInvite}>
-						Copy
-					</Button>
+					<Button size="sm" variant="outline" onclick={copyInvite}>Copy</Button>
 				</div>
 				<button
 					class="text-xs text-muted-foreground hover:text-zinc-100"
@@ -154,16 +174,54 @@
 					class="w-full rounded bg-zinc-800 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500"
 					onkeydown={(e) => e.key === 'Enter' && handleCreateGuild()}
 				/>
-				<Button class="w-full" size="sm" onclick={handleCreateGuild}>
-					Create Server
-				</Button>
+				<Button class="w-full" size="sm" onclick={handleCreateGuild}>Create Server</Button>
 			</div>
 			<Separator />
 		{/if}
 
+		{#if selectedGuild}
+			<div class="flex items-center justify-between px-3 pt-2">
+				<span class="text-xs text-muted-foreground">Channels</span>
+				<button
+					class="text-xs text-muted-foreground hover:text-zinc-100"
+					onclick={() => (showCreateChannel = !showCreateChannel)}
+				>
+					+
+				</button>
+			</div>
+
+			{#if showCreateChannel}
+				<div class="space-y-2 p-3">
+					<input
+						bind:value={newChannelName}
+						placeholder="Channel name"
+						class="w-full rounded bg-zinc-800 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+						onkeydown={(e) => e.key === 'Enter' && handleCreateChannel()}
+					/>
+					<div class="flex gap-2">
+						<button
+							class="flex-1 rounded px-2 py-1.5 text-xs {newChannelKind === 'text' ? 'bg-indigo-600' : 'bg-zinc-800'}"
+							onclick={() => (newChannelKind = 'text')}
+						>
+							# Text
+						</button>
+						<button
+							class="flex-1 rounded px-2 py-1.5 text-xs {newChannelKind === 'voice' ? 'bg-indigo-600' : 'bg-zinc-800'}"
+							onclick={() => (newChannelKind = 'voice')}
+						>
+							🔊 Voice
+						</button>
+					</div>
+					<Button class="w-full" size="sm" onclick={handleCreateChannel}>
+						Create
+					</Button>
+				</div>
+			{/if}
+		{/if}
+
 		<nav class="flex-1 space-y-0.5 overflow-y-auto p-2">
 			{#if channels.length > 0}
-				<p class="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+				<p class="px-2 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 					Text Channels
 				</p>
 				{#each channels.filter((c) => c.kind === 'text') as channel (channel.id)}
@@ -175,14 +233,35 @@
 						{channel.name}
 					</a>
 				{/each}
+
+				{#if channels.filter((c) => c.kind === 'voice').length > 0}
+					<p
+						class="mt-3 px-2 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+					>
+						Voice Channels
+					</p>
+					{#each channels.filter((c) => c.kind === 'voice') as channel (channel.id)}
+						<button
+							class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100
+						{voice.currentChannelId === channel.id ? 'bg-zinc-800 text-zinc-100' : ''}"
+							onclick={() => voice.join(channel.id)}
+						>
+							<span class="text-lg text-muted-foreground">🔊</span>
+							{channel.name}
+							{#if voice.currentChannelId === channel.id}
+								<span class="ml-auto text-xs text-green-500">●</span>
+							{/if}
+						</button>
+					{/each}
+				{/if}
 			{:else if selectedGuild}
 				<p class="px-2 py-4 text-center text-sm text-muted-foreground">No channels yet</p>
 			{:else}
-				<p class="px-2 py-4 text-center text-sm text-muted-foreground">
-					Create or join a server
-				</p>
+				<p class="px-2 py-4 text-center text-sm text-muted-foreground">Create or join a server</p>
 			{/if}
 		</nav>
+
+		<VoicePanel />
 
 		<Separator />
 

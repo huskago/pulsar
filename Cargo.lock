@@ -1536,8 +1536,10 @@ dependencies = [
 name = "pulsar-api"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "chrono",
+ "jsonwebtoken",
  "pulsar-auth",
  "pulsar-common",
  "pulsar-db",
