@@ -1,0 +1,14 @@
+[package]
+name = "pulsar-db"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pulsar-common = { path = "../pulsar-common" }
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+serde.workspace = true

@@ -22,9 +22,7 @@ impl ConnectionManager {
     pub async fn add(&self, user_id: String) -> mpsc::UnboundedReceiver<ServerEvent> {
         let (tx, rx) = mpsc::unbounded_channel();
 
-        let handle = ConnectionHandle {
-            sender: tx,
-        };
+        let handle = ConnectionHandle { sender: tx };
 
         self.connections
             .write()

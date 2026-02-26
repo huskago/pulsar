@@ -1,8 +1,8 @@
-use crate::store::memory::MemoryStore;
 use pulsar_auth::jwt::JwtManager;
+use sqlx::PgPool;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub store: MemoryStore,
+    pub db: PgPool,
     pub jwt: JwtManager,
 }

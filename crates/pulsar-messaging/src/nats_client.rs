@@ -5,7 +5,7 @@ use async_nats::{
 use bytes::Bytes;
 use pulsar_common::error::AppError;
 use std::time::Duration;
-use tracing::{info};
+use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct NatsConfig {

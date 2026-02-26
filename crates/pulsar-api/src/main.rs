@@ -1,9 +1,10 @@
 use axum::{routing::{get, post}, Json, Router};
 use pulsar_auth::jwt::JwtManager;
 use pulsar_common::config::AppConfig;
+use pulsar_db::pool::{self, DatabaseConfig};
 use serde::Serialize;
 use tokio::net::TcpListener;
-use tower_http::cors::{CorsLayer, Any, Cors};
+use tower_http::cors::{CorsLayer, Any};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -14,7 +15,6 @@ mod store;
 
 use handlers::{auth, users};
 use state::AppState;
-use store::memory::MemoryStore;
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -38,10 +38,12 @@ async fn main() {
     let config = AppConfig::default();
     let jwt = JwtManager::new("pulsar-dev-secret");
 
-    let state = AppState {
-        store: MemoryStore::new(),
-        jwt,
-    };
+    let db_config = DatabaseConfig::default();
+    let db = pool::create_pool(&db_config)
+        .await
+        .expect("Failed to connect to PostgreSQL");
+
+    let state = AppState { db, jwt };
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
