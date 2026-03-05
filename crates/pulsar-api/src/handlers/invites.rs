@@ -8,6 +8,8 @@ use pulsar_common::utils::generate_invite_code;
 use pulsar_db::repo::{guilds, invites};
 use serde::{Deserialize, Serialize};
 use tracing::info;
+use pulsar_common::permissions::Permissions;
+use crate::handlers::perms;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateInvite {
@@ -45,6 +47,7 @@ pub async fn create_invite(
     if !guilds::is_member(&state.db, guild_id, user_id).await? {
         return Err(AppError::Forbidden);
     }
+    perms::check_permission(&state.db, guild_id, user_id, Permissions::CREATE_INVITES).await?;
 
     let guild = guilds::find_by_id(&state.db, guild_id)
         .await?

@@ -1,6 +1,6 @@
 use axum::http::header;
 use axum::{
-    routing::{get, post}, Json,
+    routing::{get, post, patch, put, delete}, Json,
     Router,
 };
 use pulsar_auth::jwt::JwtManager;
@@ -17,7 +17,7 @@ mod handlers;
 mod middleware;
 mod state;
 
-use handlers::{auth, channels, guilds, invites, uploads, users, voice};
+use handlers::{auth, users, guilds, channels, invites, voice, uploads, roles};
 use state::AppState;
 
 #[derive(Serialize)]
@@ -90,6 +90,14 @@ async fn main() {
         .route("/invites/{code}/join", post(invites::join_invite))
         .route("/voice/token", post(voice::get_voice_token))
         .route("/upload", post(uploads::upload_file))
+        .route("/guilds/{guild_id}/roles",
+               get(roles::list_roles).post(roles::create_role))
+        .route("/guilds/{guild_id}/roles/{role_id}",
+               patch(roles::update_role).delete(roles::delete_role))
+        .route("/guilds/{guild_id}/roles/{role_id}/members",
+               put(roles::assign_role))
+        .route("/guilds/{guild_id}/roles/{role_id}/members/{user_id}",
+               delete(roles::unassign_role))
         .with_state(state)
         .layer(cors);
 

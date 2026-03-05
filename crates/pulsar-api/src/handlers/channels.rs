@@ -9,6 +9,8 @@ use pulsar_db::repo::{attachments, channels, guilds, messages};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::info;
+use pulsar_common::permissions::Permissions;
+use crate::handlers::perms;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateChannel {
@@ -55,6 +57,7 @@ pub async fn create_channel(
     if !guilds::is_member(&state.db, guild_id, user_id).await? {
         return Err(AppError::Forbidden);
     }
+    perms::check_permission(&state.db, guild_id, user_id, Permissions::MANAGE_CHANNELS).await?;
 
     if payload.name.len() < 1 || payload.name.len() > 100 {
         return Err(AppError::BadRequest(

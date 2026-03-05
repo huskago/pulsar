@@ -1,6 +1,7 @@
 use axum::{extract::State, Json};
 use pulsar_common::error::AppError;
-use pulsar_db::repo::{channels as channels_repo, guilds};
+use pulsar_common::permissions::Permissions;
+use pulsar_db::repo::{channels as channels_repo, guilds, roles};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -40,10 +41,13 @@ pub async fn create_guild(
 
     let guild = guilds::insert(&state.db, guild_id, &payload.name, user_id).await?;
 
+    let role_id = chrono::Utc::now().timestamp_millis() + 1;
+    roles::create_default_role(&state.db, role_id, guild_id, Permissions::DEFAULT).await?;
+
     let channel_id = guild_id + 1;
     channels_repo::insert(&state.db, channel_id, guild_id, "general", "text", 0).await?;
 
-    info!(guild_id = %guild.id, user_id = %user_id, "Guild created");
+    info!(guild_id = %guild.id, "Guild created with @everyone role");
 
     Ok(Json(GuildResponse {
         id: guild.id.to_string(),

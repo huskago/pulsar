@@ -223,6 +223,33 @@ async fn handle_client_message(
                 Err(_) => return,
             };
 
+            // Vérifier la permission SEND_MESSAGES
+            let channel = match pulsar_db::repo::channels::find_by_id(db, ch_id).await {
+                Ok(Some(ch)) => ch,
+                _ => return,
+            };
+
+            let guild = match pulsar_db::repo::guilds::find_by_id(db, channel.guild_id).await {
+                Ok(Some(g)) => g,
+                _ => return,
+            };
+
+            if guild.owner_id != u_id {
+                let perms_bits = match pulsar_db::repo::roles::get_member_permissions(
+                    db, channel.guild_id, u_id,
+                ).await {
+                    Ok(p) => p,
+                    Err(_) => return,
+                };
+
+                let perms = pulsar_common::permissions::Permissions::new(perms_bits);
+
+                if !perms.has(pulsar_common::permissions::Permissions::SEND_MESSAGES) {
+                    warn!(user_id = %user_id, channel_id = %channel_id, "No SEND_MESSAGES permission");
+                    return;
+                }
+            }
+
             let msg_id = chrono::Utc::now().timestamp_millis();
 
             if let Err(e) =
@@ -246,7 +273,7 @@ async fn handle_client_message(
                     &att.url,
                     &att.url,
                 )
-                .await
+                    .await
                 {
                     Ok(_) => {
                         info!(att_id = %att_id, msg_id = %msg_id, "Attachment saved to DB");

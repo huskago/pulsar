@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:18
+    container_name: pulsar-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pulsar
+      POSTGRES_PASSWORD: pulsar
+      POSTGRES_DB: pulsar
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+  nats:
+    image: nats:latest
+    container_name: pulsar-nats
+    command: "-js"
+    restart: unless-stopped
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  minio:
+    image: minio/minio
+    container_name: pulsar-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: pulsar
+      MINIO_ROOT_PASSWORD: pulsarsecret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  postgres_data:
+  minio_data:

@@ -5,3 +5,5 @@ pub mod invites;
 pub mod uploads;
 pub mod users;
 pub mod voice;
+pub mod perms;
+pub mod roles;
