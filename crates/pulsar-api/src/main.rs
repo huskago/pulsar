@@ -17,7 +17,7 @@ mod handlers;
 mod middleware;
 mod state;
 
-use handlers::{auth, users, guilds, channels, invites, voice, uploads, roles};
+use handlers::{auth, users, guilds, channels, invites, voice, uploads, roles, dms, relationships};
 use state::AppState;
 
 #[derive(Serialize)]
@@ -71,6 +71,8 @@ async fn main() {
         .route("/invites/{code}", get(invites::get_invite))
         // Protected routes
         .route("/users/me", get(users::get_me))
+        .route("/users/me/settings",
+               get(users::get_settings).patch(users::update_settings))
         .route(
             "/guilds",
             get(guilds::list_guilds).post(guilds::create_guild),
@@ -98,6 +100,14 @@ async fn main() {
                put(roles::assign_role))
         .route("/guilds/{guild_id}/roles/{role_id}/members/{user_id}",
                delete(roles::unassign_role))
+        .route("/relationships",
+               get(relationships::list_relationships).post(relationships::create_relationship))
+        .route("/relationships/{user_id}",
+               put(relationships::update_relationship).delete(relationships::delete_relationship))
+        .route("/relationships/{user_id}/mutual-friends",
+               get(relationships::get_mutual_friends))
+        .route("/dms", get(dms::list_dms).post(dms::open_dm))
+        .route("/dms/group", post(dms::create_group_dm))
         .with_state(state)
         .layer(cors);
 

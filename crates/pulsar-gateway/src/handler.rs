@@ -81,6 +81,15 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     };
 
+    let nats_dm_sub = match state.nats.subscribe(&"dm.>".to_string()).await {
+        Ok(sub) => sub,
+        Err(e) => {
+            error!("Failed to subscribe to DM NATS: {}", e);
+            state.connections.remove(&user_id).await;
+            return;
+        }
+    };
+
     // NATS chat task -> ConnectionManager
     let chat_connections = state.connections.clone();
     let chat_user_id = user_id.clone();
@@ -108,6 +117,35 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
             typing_connections
                 .send_to_user(&typing_user_id, event)
                 .await;
+        }
+    });
+
+    // DM task -> ConnectionManager
+    let dm_connections = state.connections.clone();
+    let dm_user_id = user_id.clone();
+    let dm_db = state.db.clone();
+    let nats_dm_task = tokio::spawn(async move {
+        let mut sub = nats_dm_sub;
+        while let Some(msg) = sub.next().await {
+            let subject = msg.subject.as_str();
+            let dm_channel_id: i64 = match subject.strip_prefix("dm.").and_then(|s| s.parse().ok()) {
+                Some(id) => id,
+                None => continue,
+            };
+
+            let is_participant = pulsar_db::repo::dms::is_participant(
+                &dm_db, dm_channel_id, dm_user_id.parse().unwrap_or(0)
+            ).await.unwrap_or(false);
+
+            if !is_participant {
+                continue;
+            }
+
+            let event: ServerEvent = match serde_json::from_slice(&msg.payload) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            dm_connections.send_to_user(&dm_user_id, event).await;
         }
     });
 
@@ -157,6 +195,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         _ = recv_task => {},
         _ = nats_chat_task => {},
         _ = nats_typing_task => {},
+        _ = nats_dm_task => {},
     }
 
     state.connections.remove(&user_id).await;
@@ -223,31 +262,38 @@ async fn handle_client_message(
                 Err(_) => return,
             };
 
-            // Vérifier la permission SEND_MESSAGES
             let channel = match pulsar_db::repo::channels::find_by_id(db, ch_id).await {
                 Ok(Some(ch)) => ch,
                 _ => return,
             };
 
-            let guild = match pulsar_db::repo::guilds::find_by_id(db, channel.guild_id).await {
-                Ok(Some(g)) => g,
-                _ => return,
-            };
-
-            if guild.owner_id != u_id {
-                let perms_bits = match pulsar_db::repo::roles::get_member_permissions(
-                    db, channel.guild_id, u_id,
-                ).await {
-                    Ok(p) => p,
-                    Err(_) => return,
+            if channel.kind == "dm" {
+                match pulsar_db::repo::dms::is_participant(db, ch_id, u_id).await {
+                    Ok(true) => {},
+                    _ => {
+                        warn!(user_id = %user_id, "Not a DM participant");
+                        return;
+                    }
+                }
+            } else if let Some(gid) = channel.guild_id {
+                let guild = match pulsar_db::repo::guilds::find_by_id(db, gid).await {
+                    Ok(Some(g)) => g,
+                    _ => return,
                 };
 
-                let perms = pulsar_common::permissions::Permissions::new(perms_bits);
-
-                if !perms.has(pulsar_common::permissions::Permissions::SEND_MESSAGES) {
-                    warn!(user_id = %user_id, channel_id = %channel_id, "No SEND_MESSAGES permission");
-                    return;
+                if guild.owner_id != u_id {
+                    let perms_bits = match pulsar_db::repo::roles::get_member_permissions(db, gid, u_id).await {
+                        Ok(p) => p,
+                        Err(_) => return,
+                    };
+                    let perms = pulsar_common::permissions::Permissions::new(perms_bits);
+                    if !perms.has(pulsar_common::permissions::Permissions::SEND_MESSAGES) {
+                        warn!(user_id = %user_id, "No SEND_MESSAGES permission");
+                        return;
+                    }
                 }
+            } else {
+                return;
             }
 
             let msg_id = chrono::Utc::now().timestamp_millis();
@@ -299,7 +345,11 @@ async fn handle_client_message(
             let event = ServerEvent::MessageCreate(message);
             let payload = serde_json::to_vec(&event).unwrap();
 
-            let subject = subjects::chat_channel("default", &channel_id);
+            let subject = if channel.kind == "dm" {
+                format!("dm.{}", channel_id)
+            } else {
+                subjects::chat_channel("default", &channel_id)
+            };
 
             if let Err(e) = nats.publish_persistent(&subject, &payload).await {
                 error!("Failed to publish to NATS: {}", e);

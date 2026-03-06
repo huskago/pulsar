@@ -7,3 +7,6 @@ pub mod users;
 pub mod voice;
 pub mod perms;
 pub mod roles;
+pub mod dms;
+pub mod relationships;
+pub mod privacy;

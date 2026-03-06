@@ -5,7 +5,7 @@ use axum::{
 };
 use pulsar_common::error::AppError;
 use pulsar_common::models::message::AttachmentPayload;
-use pulsar_db::repo::{attachments, channels, guilds, messages};
+use pulsar_db::repo::{attachments, channels, dms, guilds, messages};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::info;
@@ -89,7 +89,7 @@ pub async fn create_channel(
 
     Ok(Json(ChannelResponse {
         id: row.id.to_string(),
-        guild_id: row.guild_id.to_string(),
+        guild_id: row.guild_id.unwrap().to_string(),
         name: row.name,
         kind: row.kind,
         position: row.position,
@@ -121,7 +121,7 @@ pub async fn list_channels(
         .into_iter()
         .map(|c| ChannelResponse {
             id: c.id.to_string(),
-            guild_id: c.guild_id.to_string(),
+            guild_id: c.guild_id.unwrap().to_string(),
             name: c.name,
             kind: c.kind,
             position: c.position,
@@ -138,7 +138,7 @@ pub async fn list_messages(
     Path(channel_id): Path<String>,
     axum::extract::Query(params): axum::extract::Query<MessageQuery>,
 ) -> Result<Json<Vec<MessageResponse>>, AppError> {
-    let _user_id: i64 = auth
+    let user_id: i64 = auth
         .claims
         .sub
         .parse()
@@ -146,6 +146,22 @@ pub async fn list_messages(
     let channel_id: i64 = channel_id
         .parse()
         .map_err(|_| AppError::BadRequest("Invalid channel ID".into()))?;
+
+    let channel = channels::find_by_id(&state.db, channel_id)
+        .await?
+        .ok_or(AppError::NotFound("Channel not found".into()))?;
+
+    if channel.kind == "dm" {
+        if !dms::is_participant(&state.db, channel_id, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+    } else if let Some(gid) = channel.guild_id {
+        if !guilds::is_member(&state.db, gid, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+    } else {
+        return Err(AppError::Forbidden);
+    }
 
     let limit = params.limit.unwrap_or(50).min(100);
     let before = params.before.and_then(|b| b.parse::<i64>().ok());

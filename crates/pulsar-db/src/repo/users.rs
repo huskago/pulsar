@@ -13,6 +13,12 @@ pub struct UserRow {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct UserSettingsRow {
+    pub dm_privacy: String,
+    pub friend_request_privacy: String,
+}
+
 pub async fn insert(
     pool: &PgPool,
     id: i64,
@@ -64,4 +70,33 @@ pub async fn update_status(pool: &PgPool, id: i64, status: &str) -> Result<(), A
         .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))?;
 
     Ok(())
+}
+
+pub async fn get_settings(pool: &PgPool, user_id: i64) -> Result<UserSettingsRow, AppError> {
+    sqlx::query_as::<_, UserSettingsRow>(
+        "SELECT dm_privacy, friend_request_privacy FROM users WHERE id = $1"
+    )
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
+}
+
+pub async fn update_settings(
+    pool: &PgPool,
+    user_id: i64,
+    dm_privacy: &str,
+    friend_request_privacy: &str,
+) -> Result<UserSettingsRow, AppError> {
+    sqlx::query_as::<_, UserSettingsRow>(
+        "UPDATE users SET dm_privacy = $2, friend_request_privacy = $3
+         WHERE id = $1
+         RETURNING dm_privacy, friend_request_privacy"
+    )
+        .bind(user_id)
+        .bind(dm_privacy)
+        .bind(friend_request_privacy)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Update settings: {}", e)))
 }

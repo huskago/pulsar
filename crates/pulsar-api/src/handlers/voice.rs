@@ -1,7 +1,7 @@
 use axum::{extract::State, Json};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use pulsar_common::error::AppError;
-use pulsar_db::repo::channels;
+use pulsar_db::repo::{channels, dms, guilds};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
@@ -60,11 +60,22 @@ pub async fn get_voice_token(
         .await?
         .ok_or(AppError::NotFound("Channel not found".into()))?;
 
-    if channel.kind != "voice" {
-        return Err(AppError::BadRequest("Not a voice channel".into()));
-    }
+    let room_name = if channel.kind == "dm" {
+        if !dms::is_participant(&state.db, channel_id, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+        format!("dm_{}", channel_id)
+    } else if channel.kind == "voice" {
+        let guild_id = channel.guild_id
+            .ok_or(AppError::BadRequest("Channel has no guild".into()))?;
 
-    let room_name = format!("{}_{}", channel.guild_id, channel_id);
+        if !guilds::is_member(&state.db, guild_id, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+        format!("{}_{}", guild_id, channel_id)
+    } else {
+        return Err(AppError::BadRequest("Channel does not support voice".into()));
+    };
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -91,7 +102,7 @@ pub async fn get_voice_token(
         &claims,
         &EncodingKey::from_secret(state.livekit.api_secret.as_bytes()),
     )
-    .map_err(|e| AppError::Internal(anyhow::anyhow!("Token generation failed: {}", e)))?;
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Token generation failed: {}", e)))?;
 
     info!(
         user_id = %user_id,

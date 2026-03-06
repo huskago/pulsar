@@ -57,6 +57,42 @@ export interface VoiceTokenResponse {
     url: string;
 }
 
+export interface DmUserInfo {
+    id: string;
+    username: string;
+    avatar_url: string | null;
+}
+
+export interface DmResponse {
+    channel_id: string;
+    other_user: DmUserInfo;
+}
+
+export interface DmConversationResponse {
+    channel_id: string;
+    other_user: DmUserInfo;
+    last_message_at: string | null;
+}
+
+export interface RelationshipResponse {
+    user_id: string;
+    username: string;
+    avatar_url: string | null;
+    kind: string;
+    created_at: string;
+}
+
+export interface MutualFriendResponse {
+    user_id: string;
+    username: string;
+    avatar_url: string | null;
+}
+
+export interface UserSettings {
+    dm_privacy: string;
+    friend_request_privacy: string;
+}
+
 class ApiService {
     private token: string | null = null;
 
@@ -197,6 +233,89 @@ class ApiService {
         return this.request('/voice/token', {
             method: 'POST',
             body: JSON.stringify({channel_id: channelId})
+        });
+    }
+
+    // DMs
+    async openDm(userId: string): Promise<DmResponse> {
+        return this.request('/dms', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: userId })
+        });
+    }
+
+    async listDms(): Promise<DmConversationResponse[]> {
+        return this.request('/dms');
+    }
+
+    // Relationships
+    async sendFriendRequest(userId: string): Promise<any> {
+        return this.request('/relationships', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: userId, type: 'friend' })
+        });
+    }
+
+    async blockUser(userId: string): Promise<any> {
+        return this.request('/relationships', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: userId, type: 'block' })
+        });
+    }
+
+    async acceptFriendRequest(userId: string): Promise<any> {
+        return this.request(`/relationships/${userId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ action: 'accept' })
+        });
+    }
+
+    async declineFriendRequest(userId: string): Promise<any> {
+        return this.request(`/relationships/${userId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ action: 'decline' })
+        });
+    }
+
+    async removeRelationship(userId: string): Promise<any> {
+        return this.request(`/relationships/${userId}`, {
+            method: 'DELETE'
+        });
+    }
+
+    async listFriends(): Promise<RelationshipResponse[]> {
+        return this.request('/relationships?kind=friend');
+    }
+
+    async listPendingRequests(): Promise<RelationshipResponse[]> {
+        return this.request('/relationships?kind=pending');
+    }
+
+    async listBlocked(): Promise<RelationshipResponse[]> {
+        return this.request('/relationships?kind=blocked');
+    }
+
+    async getMutualFriends(userId: string): Promise<MutualFriendResponse[]> {
+        return this.request(`/relationships/${userId}/mutual-friends`);
+    }
+
+    // Settings
+    async getSettings(): Promise<UserSettings> {
+        return this.request('/users/me/settings');
+    }
+
+    async updateSettings(settings: Partial<UserSettings>): Promise<UserSettings> {
+        return this.request('/users/me/settings', {
+            method: 'PATCH',
+            body: JSON.stringify(settings)
+        });
+    }
+
+    // Group DMs
+    async createGroupDm(userIds: string[], name?: string): Promise<any> {
+        return this.request('/dms/group', {
+            method: 'POST',
+            body: JSON.stringify({ user_ids: userIds, name })
         });
     }
 }
