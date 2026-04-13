@@ -17,6 +17,19 @@ impl Default for DatabaseConfig {
     }
 }
 
+impl DatabaseConfig {
+    pub fn from_env() -> Self {
+        Self {
+            url: std::env::var("DATABASE_URL")
+                .unwrap_or_else(|_| "postgres://pulsar:pulsar@localhost:5432/pulsar".to_string()),
+            max_connections: std::env::var("DATABASE_MAX_CONNECTIONS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
+        }
+    }
+}
+
 pub async fn create_pool(config: &DatabaseConfig) -> Result<PgPool, sqlx::Error> {
     let pool = PgPoolOptions::new()
         .max_connections(config.max_connections)

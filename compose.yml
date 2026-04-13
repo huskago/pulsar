@@ -11,6 +11,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulsar"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   nats:
     image: nats:latest
@@ -34,6 +39,71 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BINARY: pulsar-api
+    container_name: pulsar-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgres://pulsar:pulsar@db:5432/pulsar
+      NATS_URL: nats://nats:4222
+      STORAGE_ENDPOINT: http://minio:9000
+      # Set STORAGE_PUBLIC_URL to the externally reachable MinIO URL:
+      # STORAGE_PUBLIC_URL: http://IP:9000/pulsar-uploads
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      minio:
+        condition: service_started
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BINARY: pulsar-gateway
+    container_name: pulsar-gateway
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3001
+      DATABASE_URL: postgres://pulsar:pulsar@db:5432/pulsar
+      NATS_URL: nats://nats:4222
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+      nats:
+        condition: service_started
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        # Replace with your IP or domain before building
+        PUBLIC_API_URL: http://localhost:3000
+        PUBLIC_GATEWAY_URL: ws://localhost:3001/gateway
+    container_name: pulsar-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+      - gateway
 
 volumes:
   postgres_data:

@@ -20,3 +20,4 @@ tower-http.workspace = true
 sqlx.workspace = true
 jsonwebtoken.workspace = true
 anyhow.workspace = true
+dotenvy.workspace = true

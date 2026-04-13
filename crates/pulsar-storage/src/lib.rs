@@ -32,6 +32,26 @@ impl Default for StorageConfig {
     }
 }
 
+impl StorageConfig {
+    pub fn from_env() -> Self {
+        let endpoint = std::env::var("STORAGE_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:9000".to_string());
+        let bucket = std::env::var("STORAGE_BUCKET")
+            .unwrap_or_else(|_| "pulsar-uploads".to_string());
+        let public_url = std::env::var("STORAGE_PUBLIC_URL")
+            .unwrap_or_else(|_| format!("{}/{}", endpoint, bucket));
+        Self {
+            endpoint,
+            bucket,
+            access_key: std::env::var("STORAGE_ACCESS_KEY")
+                .unwrap_or_else(|_| "pulsar".to_string()),
+            secret_key: std::env::var("STORAGE_SECRET_KEY")
+                .unwrap_or_else(|_| "pulsarsecret".to_string()),
+            public_url,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct StorageClient {
     client: Client,

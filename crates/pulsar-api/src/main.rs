@@ -35,26 +35,30 @@ async fn health() -> Json<HealthResponse> {
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let config = AppConfig::default();
-    let jwt = JwtManager::new("pulsar-dev-secret");
+    let config = AppConfig::from_env();
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "pulsar-dev-secret".to_string());
+    let jwt = JwtManager::new(&jwt_secret);
 
-    let db_config = DatabaseConfig::default();
+    let db_config = DatabaseConfig::from_env();
     let db = pool::create_pool(&db_config)
         .await
         .expect("Failed to connect to PostgreSQL");
 
-    let storage = StorageClient::new(StorageConfig::default())
+    let storage = StorageClient::new(StorageConfig::from_env())
         .await
         .expect("Failed to connect to MinIO");
 
     let state = AppState {
         db,
         jwt,
-        livekit: LiveKitConfig::default(),
+        livekit: LiveKitConfig::from_env(),
         storage,
     };
 

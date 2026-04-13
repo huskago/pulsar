@@ -1,6 +1,7 @@
 import type {AuthResponse, User} from '$lib/types/models';
+import { PUBLIC_API_URL } from '$env/static/public';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = PUBLIC_API_URL;
 
 export interface GuildResponse {
     id: string;

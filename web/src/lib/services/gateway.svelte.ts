@@ -1,5 +1,6 @@
 import type {ClientEvent, ServerEvent} from '$lib/types/events';
 import type {AttachmentData} from './api';
+import { PUBLIC_GATEWAY_URL } from '$env/static/public';
 
 let ws: WebSocket | null = $state(null);
 let connected = $state(false);
@@ -12,7 +13,7 @@ let handlers: EventHandler[] = [];
 function connect(token: string) {
     if (ws?.readyState === WebSocket.OPEN) return;
 
-    const socket = new WebSocket('ws://localhost:3001/gateway');
+    const socket = new WebSocket(PUBLIC_GATEWAY_URL);
 
     socket.onopen = () => {
         send({type: 'Identify', data: {token}});

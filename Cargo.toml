@@ -42,6 +42,7 @@ sqlx = { version = "0.8", features = [
     "migrate",
 ] }
 rand = "0.10"
+dotenvy = "0.15"
 aws-sdk-s3 = "1"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }

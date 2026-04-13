@@ -15,18 +15,22 @@ use state::GatewayState;
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let jwt = JwtManager::new("pulsar-dev-secret");
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "pulsar-dev-secret".to_string());
+    let jwt = JwtManager::new(&jwt_secret);
 
-    let db_config = DatabaseConfig::default();
+    let db_config = DatabaseConfig::from_env();
     let db = pool::create_pool(&db_config)
         .await
         .expect("Failed to connect to PostgreSQL");
 
-    let nats_config = NatsConfig::default();
+    let nats_config = NatsConfig::from_env();
     let nats = NatsClient::connect(&nats_config)
         .await
         .expect("Failed to connect to NATS");
@@ -42,8 +46,13 @@ async fn main() {
         .route("/gateway", get(handler::ws_upgrade))
         .with_state(state);
 
-    let addr = "0.0.0.0:3001";
-    let listener = TcpListener::bind(addr).await.unwrap();
+    let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(3001);
+    let addr = format!("{}:{}", host, port);
+    let listener = TcpListener::bind(&addr).await.unwrap();
 
     info!("⚡ Pulsar Gateway listening on {}", addr);
 

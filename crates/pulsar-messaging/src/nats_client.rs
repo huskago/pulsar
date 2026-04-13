@@ -22,6 +22,17 @@ impl Default for NatsConfig {
     }
 }
 
+impl NatsConfig {
+    pub fn from_env() -> Self {
+        Self {
+            url: std::env::var("NATS_URL")
+                .unwrap_or_else(|_| "nats://localhost:4222".to_string()),
+            stream_name: std::env::var("NATS_STREAM")
+                .unwrap_or_else(|_| "PULSAR_CHAT".to_string()),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct NatsClient {
     client: Client,
