@@ -44,11 +44,13 @@ services:
     image: livekit/livekit-server:latest
     container_name: pulsar-livekit
     restart: unless-stopped
-    command: '--keys "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}" --bind 0.0.0.0'
+    command: '--config /etc/livekit/livekit.yaml --keys "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"'
+    volumes:
+      - ./livekit.yaml:/etc/livekit/livekit.yaml
     ports:
-      - "7880:7880"       # HTTP / WebSocket
-      - "7881:7881"       # RTC over TCP
-      - "7882:7882/udp"   # RTC over UDP
+      - "7880:7880"             # HTTP / WebSocket
+      - "7881:7881"             # RTC over TCP
+      - "50000-50100:50000-50100/udp"  # WebRTC media
 
   api:
     build:
