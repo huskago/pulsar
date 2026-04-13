@@ -30,7 +30,7 @@ services:
     image: minio/minio
     container_name: pulsar-minio
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command: 'server /data --console-address ":9001"'
     environment:
       MINIO_ROOT_USER: pulsar
       MINIO_ROOT_PASSWORD: pulsarsecret
@@ -39,6 +39,16 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: pulsar-livekit
+    restart: unless-stopped
+    command: '--keys "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}" --bind 0.0.0.0'
+    ports:
+      - "7880:7880"       # HTTP / WebSocket
+      - "7881:7881"       # RTC over TCP
+      - "7882:7882/udp"   # RTC over UDP
 
   api:
     build:
@@ -55,8 +65,7 @@ services:
       DATABASE_URL: postgres://pulsar:pulsar@db:5432/pulsar
       NATS_URL: nats://nats:4222
       STORAGE_ENDPOINT: http://minio:9000
-      # Set STORAGE_PUBLIC_URL to the externally reachable MinIO URL:
-      # STORAGE_PUBLIC_URL: http://IP:9000/pulsar-uploads
+      # LIVEKIT_URL and STORAGE_PUBLIC_URL come from .env (must be public VPS IP/domain)
     ports:
       - "3000:3000"
     depends_on:
@@ -65,6 +74,8 @@ services:
       nats:
         condition: service_started
       minio:
+        condition: service_started
+      livekit:
         condition: service_started
 
   gateway:
