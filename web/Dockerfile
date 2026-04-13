@@ -5,14 +5,15 @@
 
 FROM node:22-slim AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+RUN npm install -g pnpm
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY . .
 ARG PUBLIC_API_URL=http://localhost:3000
 ARG PUBLIC_GATEWAY_URL=ws://localhost:3001/gateway
 ENV PUBLIC_API_URL=$PUBLIC_API_URL
 ENV PUBLIC_GATEWAY_URL=$PUBLIC_GATEWAY_URL
-RUN npm run build
+RUN pnpm build
 
 FROM nginx:alpine
 COPY --from=builder /app/build /usr/share/nginx/html
