@@ -16,7 +16,7 @@ COPY . .
 ARG BINARY=pulsar-api
 RUN cargo build --release -p $BINARY
 
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
 ARG BINARY=pulsar-api
 COPY --from=builder /app/target/release/$BINARY /usr/local/bin/server
