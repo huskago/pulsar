@@ -96,6 +96,18 @@ impl StorageClient {
             info!(bucket = %config.bucket, "Created storage bucket");
         }
 
+        let policy = format!(
+            r#"{{"Version":"2012-10-17","Statement":[{{"Effect":"Allow","Principal":{{"AWS":["*"]}},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::{}/*"]}}]}}"#,
+            config.bucket
+        );
+        client
+            .put_bucket_policy()
+            .bucket(&config.bucket)
+            .policy(policy)
+            .send()
+            .await?;
+        info!(bucket = %config.bucket, "Set public read policy on bucket");
+
         Ok(Self {
             client,
             bucket: config.bucket,
