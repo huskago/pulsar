@@ -86,3 +86,17 @@ pub async fn touch(pool: &PgPool, session_id: Uuid) -> Result<(), AppError> {
         .map_err(|e| AppError::Internal(anyhow::anyhow!("sessions touch: {}", e)))?;
     Ok(())
 }
+
+pub async fn update_token_hash(
+    pool: &PgPool,
+    session_id: Uuid,
+    new_hash: &[u8],
+) -> Result<(), AppError> {
+    sqlx::query("UPDATE sessions SET token_hash = $1, last_used = NOW() WHERE id = $2")
+        .bind(new_hash)
+        .bind(session_id)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("sessions update_token_hash: {}", e)))?;
+    Ok(())
+}

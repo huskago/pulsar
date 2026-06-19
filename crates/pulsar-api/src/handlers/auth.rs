@@ -172,7 +172,9 @@ pub async fn refresh(
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    sessions::touch(&state.db, session.id).await?;
+    let new_refresh_token = Uuid::new_v4().to_string();
+    let new_hash = hash_token(&new_refresh_token);
+    sessions::update_token_hash(&state.db, session.id, &new_hash).await?;
 
     let user = users::find_by_id(&state.db, session.user_id)
         .await?
@@ -183,7 +185,10 @@ pub async fn refresh(
             .jwt
             .generate_token(&session.user_id.to_string(), &user.username, session.id)?;
 
-    Ok((jar, Json(LoginResponse { access_token })))
+    let updated_jar = jar
+        .remove(Cookie::build("refresh_token").path("/").build())
+        .add(refresh_cookie(&new_refresh_token, 30 * 86400));
+    Ok((updated_jar, Json(LoginResponse { access_token })))
 }
 
 pub async fn logout(
