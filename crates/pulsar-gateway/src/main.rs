@@ -23,7 +23,7 @@ async fn main() {
         .init();
 
     let jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "pulsar-dev-secret".to_string());
+        .expect("JWT_SECRET must be set");
     let jwt = JwtManager::new(&jwt_secret);
 
     let db_config = DatabaseConfig::from_env();
