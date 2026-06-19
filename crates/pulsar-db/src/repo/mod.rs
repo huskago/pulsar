@@ -7,3 +7,5 @@ pub mod users;
 pub mod roles;
 pub mod dms;
 pub mod relationships;
+pub mod channel_keys;
+pub mod sessions;
