@@ -61,16 +61,18 @@ pub async fn insert(
 pub async fn update(
     pool: &PgPool,
     role_id: i64,
+    guild_id: i64,
     name: &str,
     color: i32,
     permissions: i64,
 ) -> Result<RoleRow, AppError> {
     sqlx::query_as::<_, RoleRow>(
-        "UPDATE roles SET name = $2, color = $3, permissions = $4
-         WHERE id = $1
+        "UPDATE roles SET name = $3, color = $4, permissions = $5
+         WHERE id = $1 AND guild_id = $2
          RETURNING *"
     )
     .bind(role_id)
+    .bind(guild_id)
     .bind(name)
     .bind(color)
     .bind(permissions)
@@ -79,12 +81,19 @@ pub async fn update(
     .map_err(|e| AppError::Internal(anyhow::anyhow!("Update role: {}", e)))
 }
 
-pub async fn delete(pool: &PgPool, role_id: i64) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM roles WHERE id = $1 AND is_default = FALSE")
+pub async fn delete(pool: &PgPool, role_id: i64, guild_id: i64) -> Result<(), AppError> {
+    let result = sqlx::query(
+        "DELETE FROM roles WHERE id = $1 AND guild_id = $2 AND is_default = FALSE"
+    )
         .bind(role_id)
+        .bind(guild_id)
         .execute(pool)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Delete role: {}", e)))?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Role not found".into()));
+    }
     Ok(())
 }
 

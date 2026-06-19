@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, TokenData, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 
 use pulsar_common::error::AppError;
@@ -41,7 +41,7 @@ impl JwtManager {
     }
 
     pub fn validate_token(&self, token: &str) -> Result<Claims, AppError> {
-        let mut validation = Validation::default();
+        let mut validation = Validation::new(Algorithm::HS256);
         validation.set_required_spec_claims(&["sub", "exp", "iat"]);
 
         let token_data: TokenData<Claims> =

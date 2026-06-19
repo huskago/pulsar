@@ -1,8 +1,8 @@
 use axum::extract::State;
 use axum_extra::extract::Multipart;
 use pulsar_common::error::AppError;
+use pulsar_db::repo::{channels, dms, guilds};
 use serde::Serialize;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 
 use crate::{middleware::auth::AuthUser, state::AppState};
@@ -24,7 +24,7 @@ pub async fn upload_file(
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<axum::Json<UploadResponse>, AppError> {
-    let _user_id: i64 = auth
+    let user_id: i64 = auth
         .claims
         .sub
         .parse()
@@ -73,21 +73,38 @@ pub async fn upload_file(
         }
     }
 
-    let channel_id = channel_id.ok_or(AppError::BadRequest("Missing channel_id".into()))?;
+    let channel_id_str = channel_id.ok_or(AppError::BadRequest("Missing channel_id".into()))?;
     let file_data = file_data.ok_or(AppError::BadRequest("Missing file".into()))?;
     let file_name = file_name.unwrap_or_else(|| "unnamed".to_string());
     let content_type = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
 
+    let channel_id_num: i64 = channel_id_str
+        .parse()
+        .map_err(|_| AppError::BadRequest("Invalid channel_id".into()))?;
+
+    let channel = channels::find_by_id(&state.db, channel_id_num)
+        .await?
+        .ok_or(AppError::NotFound("Channel not found".into()))?;
+
+    if channel.kind == "dm" {
+        if !dms::is_participant(&state.db, channel_id_num, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+    } else if let Some(gid) = channel.guild_id {
+        if !guilds::is_member(&state.db, gid, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+    } else {
+        return Err(AppError::Forbidden);
+    }
+
     let result = state
         .storage
-        .upload(&channel_id, &file_name, &content_type, file_data)
+        .upload(&channel_id_str, &file_name, &content_type, file_data)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Upload failed: {}", e)))?;
 
-    let attachment_id = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as i64;
+    let attachment_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
     info!(
         filename = %file_name,

@@ -50,9 +50,9 @@ impl LiveKitConfig {
             url: std::env::var("LIVEKIT_URL")
                 .unwrap_or_else(|_| "ws://localhost:7880".to_string()),
             api_key: std::env::var("LIVEKIT_API_KEY")
-                .unwrap_or_else(|_| "devkey".to_string()),
+                .expect("LIVEKIT_API_KEY must be set"),
             api_secret: std::env::var("LIVEKIT_API_SECRET")
-                .unwrap_or_else(|_| "secret".to_string()),
+                .expect("LIVEKIT_API_SECRET must be set"),
         }
     }
 }

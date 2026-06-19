@@ -87,7 +87,16 @@ pub async fn create_role(
         return Err(AppError::BadRequest("Role name must be 1-100 characters".into()));
     }
 
-    let role_id = chrono::Utc::now().timestamp_millis();
+    let caller_bits = roles::get_member_permissions(&state.db, guild_id, user_id).await?;
+    let caller_perms = Permissions::new(caller_bits);
+    let requested_bits = payload.permissions.unwrap_or(0);
+    let safe_bits = if caller_perms.has(Permissions::ADMINISTRATOR) {
+        requested_bits
+    } else {
+        requested_bits & caller_bits
+    };
+
+    let role_id = pulsar_common::models::snowflake::Snowflake::generate().0;
     let existing = roles::find_by_guild(&state.db, guild_id).await?;
     let position = existing.len() as i32;
 
@@ -98,7 +107,7 @@ pub async fn create_role(
         &payload.name,
         payload.color.unwrap_or(0),
         position,
-        payload.permissions.unwrap_or(0),
+        safe_bits,
     ).await?;
 
     info!(role_id = %row.id, guild_id = %guild_id, name = %row.name, "Role created");
@@ -129,9 +138,17 @@ pub async fn update_role(
 
     let name = payload.name.as_deref().unwrap_or(&current.name);
     let color = payload.color.unwrap_or(current.color);
-    let permissions = payload.permissions.unwrap_or(current.permissions);
 
-    let row = roles::update(&state.db, role_id, name, color, permissions).await?;
+    let caller_bits = roles::get_member_permissions(&state.db, guild_id, user_id).await?;
+    let caller_perms = Permissions::new(caller_bits);
+    let requested_bits = payload.permissions.unwrap_or(current.permissions);
+    let permissions = if caller_perms.has(Permissions::ADMINISTRATOR) {
+        requested_bits
+    } else {
+        requested_bits & caller_bits
+    };
+
+    let row = roles::update(&state.db, role_id, guild_id, name, color, permissions).await?;
 
     info!(role_id = %role_id, "Role updated");
 
@@ -153,7 +170,7 @@ pub async fn delete_role(
     }
     perms::check_permission(&state.db, guild_id, user_id, Permissions::MANAGE_ROLES).await?;
 
-    roles::delete(&state.db, role_id).await?;
+    roles::delete(&state.db, role_id, guild_id).await?;
 
     info!(role_id = %role_id, "Role deleted");
 
@@ -176,6 +193,10 @@ pub async fn assign_role(
         return Err(AppError::Forbidden);
     }
     perms::check_permission(&state.db, guild_id, user_id, Permissions::MANAGE_ROLES).await?;
+
+    if !guilds::is_member(&state.db, guild_id, target_id).await? {
+        return Err(AppError::NotFound("Target user is not a member of this guild".into()));
+    }
 
     roles::assign_role(&state.db, guild_id, target_id, role_id).await?;
 

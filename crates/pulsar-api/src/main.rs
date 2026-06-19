@@ -1,3 +1,4 @@
+use axum::extract::DefaultBodyLimit;
 use axum::http::header;
 use axum::{
     routing::{get, post, patch, put, delete}, Json,
@@ -43,7 +44,7 @@ async fn main() {
 
     let config = AppConfig::from_env();
     let jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "pulsar-dev-secret".to_string());
+        .expect("JWT_SECRET must be set");
     let jwt = JwtManager::new(&jwt_secret);
 
     let db_config = DatabaseConfig::from_env();
@@ -95,7 +96,8 @@ async fn main() {
         )
         .route("/invites/{code}/join", post(invites::join_invite))
         .route("/voice/token", post(voice::get_voice_token))
-        .route("/upload", post(uploads::upload_file))
+        .route("/upload", post(uploads::upload_file)
+            .layer(DefaultBodyLimit::max(26 * 1024 * 1024)))
         .route("/guilds/{guild_id}/roles",
                get(roles::list_roles).post(roles::create_role))
         .route("/guilds/{guild_id}/roles/{role_id}",
