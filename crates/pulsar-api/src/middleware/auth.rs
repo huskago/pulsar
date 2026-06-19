@@ -28,6 +28,13 @@ impl FromRequestParts<AppState> for AuthUser {
 
         let claims = state.jwt.validate_token(token)?;
 
+        if crate::redis_client::is_jwt_blocked(&state.redis, &claims.jti)
+            .await
+            .unwrap_or(false)
+        {
+            return Err(AppError::Unauthorized);
+        }
+
         Ok(AuthUser { claims })
     }
 }

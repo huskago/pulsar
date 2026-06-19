@@ -84,6 +84,10 @@ async fn main() {
         .route("/health", get(health))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
+        .route("/auth/refresh", post(auth::refresh))
+        .route("/auth/logout", post(auth::logout))
+        .route("/auth/sessions", get(auth::list_sessions).delete(auth::revoke_all_sessions))
+        .route("/auth/sessions/{id}", delete(auth::revoke_session))
         .route("/invites/{code}", get(invites::get_invite))
         // Protected routes
         .route("/users/me", get(users::get_me))

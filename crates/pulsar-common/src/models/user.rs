@@ -33,6 +33,7 @@ pub struct CreateUser {
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
+    pub device_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
