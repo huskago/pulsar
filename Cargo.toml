@@ -33,10 +33,10 @@ jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
-async-nats = "0.46.0"
+async-nats = "0.49"
 bytes = "1.11.1"
 tower-http = { version = "0.6", features = ["cors"] }
-sqlx = { version = "0.8", features = [
+sqlx = { version = "0.9", features = [
     "runtime-tokio",
     "tls-rustls",
     "postgres",
@@ -49,11 +49,11 @@ dotenvy = "0.15"
 aws-sdk-s3 = "1"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
-md-5 = "0.10"
+md-5 = "0.11"
 base64 = "0.22"
 aes-gcm = "0.10"
 hex = "0.4"
-sha2 = "0.11"
+sha2 = "0.10"
 pulsar-crypto = { path = "crates/pulsar-crypto" }
 deadpool-redis = { version = "0.23", features = ["rt_tokio_1"] }
 redis = { version = "1.2", features = ["tokio-comp"] }
