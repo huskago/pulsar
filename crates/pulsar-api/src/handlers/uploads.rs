@@ -18,7 +18,6 @@ pub struct UploadResponse {
     pub url: String,
 }
 
-// POST /channels/:channel_id/upload
 pub async fn upload_file(
     auth: AuthUser,
     State(state): State<AppState>,

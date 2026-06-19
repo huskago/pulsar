@@ -45,7 +45,6 @@ pub async fn get_me(auth: AuthUser, State(state): State<AppState>) -> Result<Jso
     }))
 }
 
-// GET /users/me/settings
 pub async fn get_settings(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -64,7 +63,6 @@ pub async fn get_settings(
     }))
 }
 
-// PATCH /users/me/settings
 pub async fn update_settings(
     auth: AuthUser,
     State(state): State<AppState>,

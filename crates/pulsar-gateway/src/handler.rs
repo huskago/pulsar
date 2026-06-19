@@ -18,7 +18,6 @@ use sqlx::PgPool;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-// GET /gateway
 pub async fn ws_upgrade(
     ws: WebSocketUpgrade,
     State(state): State<GatewayState>,
@@ -29,7 +28,6 @@ pub async fn ws_upgrade(
 async fn handle_socket(socket: WebSocket, state: GatewayState) {
     let (mut sender, mut receiver) = socket.split();
 
-    // 1. Wait for the Identify (auth) message
     let claims = match tokio::time::timeout(
         Duration::from_secs(10),
         wait_for_identity(&mut receiver, &state),
@@ -50,10 +48,8 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
     let user_id = claims.sub.clone();
     info!(user_id = %user_id, "Client authenticated on gateway");
 
-    // 2. Register the connection and obtain the receiver
     let mut rx = state.connections.add(user_id.clone()).await;
 
-    // 3. Send the Hello (confirm the connection)
     let hello = ServerEvent::Hello {
         heartbeat_interval: 45000,
     };
@@ -93,8 +89,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     };
 
-    // NATS chat task -> ConnectionManager
-    // subject format: chat.{guild_id}.{channel_id}
+    // subject: chat.{guild_id}.{channel_id}
     let chat_connections = state.connections.clone();
     let chat_user_id = user_id.clone();
     let chat_db = state.db.clone();
@@ -121,8 +116,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     });
 
-    // NATS typing task -> ConnectionManager
-    // subject format: typing.{guild_id}.{channel_id}
+    // subject: typing.{guild_id}.{channel_id}
     let typing_connections = state.connections.clone();
     let typing_user_id = user_id.clone();
     let typing_db = state.db.clone();
@@ -151,7 +145,6 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     });
 
-    // DM task -> ConnectionManager
     let dm_connections = state.connections.clone();
     let dm_user_id = user_id.clone();
     let dm_db = state.db.clone();
@@ -180,7 +173,6 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     });
 
-    // Send task: rx -> WebSocket
     let send_task = tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
             let json = match serde_json::to_string(&event) {
@@ -197,7 +189,6 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     });
 
-    // Receive task: WebSocket -> NATS
     let recv_nats = state.nats.clone();
     let recv_connections = state.connections.clone();
     let recv_db = state.db.clone();
@@ -235,7 +226,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         _ = nats_dm_task => {},
     }
 
-    // Abort all remaining tasks, dropping a JoinHandle detaches but does not cancel.
+    // Dropping a JoinHandle only detaches the task, abort to actually stop it.
     send_abort.abort();
     recv_abort.abort();
     chat_abort.abort();

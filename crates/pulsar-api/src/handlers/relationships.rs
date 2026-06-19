@@ -43,7 +43,6 @@ pub struct MutualFriendsResponse {
     pub avatar_url: Option<String>,
 }
 
-// POST /relationships
 pub async fn create_relationship(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -96,7 +95,6 @@ pub async fn create_relationship(
     }
 }
 
-// PUT /relationships/:user_id
 pub async fn update_relationship(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -122,7 +120,6 @@ pub async fn update_relationship(
     }
 }
 
-// DELETE /relationships/:user_id
 pub async fn delete_relationship(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -158,7 +155,6 @@ pub async fn delete_relationship(
     }
 }
 
-// GET /relationships?kind=friend|pending|blocked
 pub async fn list_relationships(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -196,7 +192,6 @@ pub async fn list_relationships(
     Ok(Json(results))
 }
 
-// GET /relationships/:user_id/mutual-friends
 pub async fn get_mutual_friends(
     auth: AuthUser,
     State(state): State<AppState>,

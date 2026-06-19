@@ -1,16 +1,9 @@
-/// NATS subject naming conventions.
+/// Subject hierarchy:
+///   chat.{guild_id}.{channel_id}    channel messages
+///   typing.{guild_id}.{channel_id}  typing indicators
+///   presence.{guild_id}             presence updates
 ///
-/// The hierarchy reflects the Pulsar topology:
-///   chat.{guild_id}.{channel_id}  -> messages from a channel
-///   presence.{guild_id}           -> presence changes in a guild
-///   typing.{guild_id}.{channel_id} -> typing indicators
-///
-/// NATS supports wildcards:
-///   chat.guild_123.*  -> all channels in guild 123
-///   chat.>            -> all messages from all guilds
-///
-/// The '>' is a recursive wildcard (matches everything that follows).
-/// The '*' matches a single segment.
+/// Wildcards: `*` matches one segment, `>` matches the rest of the subject.
 
 pub fn chat_channel(guild_id: &str, channel_id: &str) -> String {
     format!("chat.{}.{}", guild_id, channel_id)

@@ -48,7 +48,6 @@ pub struct GroupDmResponse {
     pub participants: Vec<DmUserInfo>,
 }
 
-// POST /dms
 pub async fn open_dm(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -75,7 +74,7 @@ pub async fn open_dm(
         None => {
             let new_id = pulsar_common::models::snowflake::Snowflake::generate().0;
             dms::create(&state.db, new_id, user_id, target_id).await?;
-            info!(channel_id = %new_id, user_a = %user_id, user_b = %target_id, "DM channel created");
+            info!(channel_id = %new_id, user_a = %user_id, user_b = %target_id, "DM created");
             new_id
         }
     };
@@ -90,7 +89,6 @@ pub async fn open_dm(
     }))
 }
 
-// GET /dms
 pub async fn list_dms(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -115,7 +113,6 @@ pub async fn list_dms(
     Ok(Json(response))
 }
 
-// POST /dms/group
 pub async fn create_group_dm(
     auth: AuthUser,
     State(state): State<AppState>,

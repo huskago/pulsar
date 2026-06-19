@@ -12,7 +12,6 @@ use tracing::info;
 
 use crate::state::AppState;
 
-// POST /auth/register
 pub async fn register(
     State(state): State<AppState>,
     Json(payload): Json<CreateUser>,
@@ -64,7 +63,6 @@ pub async fn register(
     Ok(Json(AuthResponse { token, user }))
 }
 
-// POST /auth/login
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,

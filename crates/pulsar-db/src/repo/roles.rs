@@ -13,7 +13,6 @@ pub struct RoleRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Create the @everyone role for a new guild
 pub async fn create_default_role(
     pool: &PgPool,
     role_id: i64,
@@ -117,13 +116,12 @@ pub async fn find_default(pool: &PgPool, guild_id: i64) -> Result<Option<RoleRow
     .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
 }
 
-/// Retrieve the combined permissions of a member (all their roles + @everyone)
+/// Returns combined permission bits across all roles assigned to the member, including @everyone.
 pub async fn get_member_permissions(
     pool: &PgPool,
     guild_id: i64,
     user_id: i64,
 ) -> Result<i64, AppError> {
-    // Combine: @everyone permissions OR all assigned role permissions
     let row = sqlx::query_scalar::<_, i64>(
         "SELECT COALESCE(
             (SELECT bit_or(r.permissions) FROM roles r
@@ -143,7 +141,6 @@ pub async fn get_member_permissions(
     Ok(row)
 }
 
-/// Assign a role to a member
 pub async fn assign_role(
     pool: &PgPool,
     guild_id: i64,
@@ -164,7 +161,6 @@ pub async fn assign_role(
     Ok(())
 }
 
-/// Remove a role from a member
 pub async fn remove_role(
     pool: &PgPool,
     guild_id: i64,
@@ -183,7 +179,6 @@ pub async fn remove_role(
     Ok(())
 }
 
-/// Retrieve the roles of a member
 pub async fn get_member_roles(
     pool: &PgPool,
     guild_id: i64,

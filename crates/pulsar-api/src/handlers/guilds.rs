@@ -20,7 +20,6 @@ pub struct GuildResponse {
     pub owner_id: String,
 }
 
-// POST /guilds
 pub async fn create_guild(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -57,7 +56,6 @@ pub async fn create_guild(
     }))
 }
 
-// GET /guilds
 pub async fn list_guilds(
     auth: AuthUser,
     State(state): State<AppState>,

@@ -39,7 +39,6 @@ struct VideoGrants {
     can_publish_data: bool,
 }
 
-// POST /voice/token
 pub async fn get_voice_token(
     auth: AuthUser,
     State(state): State<AppState>,

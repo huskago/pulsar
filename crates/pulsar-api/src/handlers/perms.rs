@@ -2,8 +2,7 @@ use pulsar_common::{error::AppError, permissions::Permissions};
 use pulsar_db::repo::{guilds, roles};
 use sqlx::PgPool;
 
-/// Checks whether a user has permission in a guild.
-/// The owner bypasses all permissions.
+/// The guild owner bypasses all permission checks.
 pub async fn check_permission(
     db: &PgPool,
     guild_id: i64,
@@ -18,7 +17,6 @@ pub async fn check_permission(
         return Ok(());
     }
 
-    // Check the combined permissions of roles
     let perms_bits = roles::get_member_permissions(db, guild_id, user_id).await?;
     let perms = Permissions::new(perms_bits);
 

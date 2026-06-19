@@ -28,7 +28,6 @@ pub struct InviteResponse {
     pub expires_at: Option<String>,
 }
 
-// POST /guilds/:guild_id/invites
 pub async fn create_invite(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -82,7 +81,6 @@ pub async fn create_invite(
     }))
 }
 
-// GET /guilds/:guild_id/invites
 pub async fn list_invites(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -123,7 +121,6 @@ pub async fn list_invites(
     Ok(Json(response))
 }
 
-// GET /invites/:code
 pub async fn get_invite(
     State(state): State<AppState>,
     Path(code): Path<String>,
@@ -159,7 +156,6 @@ pub async fn get_invite(
     }))
 }
 
-// POST /invites/:code/join
 pub async fn join_invite(
     auth: AuthUser,
     State(state): State<AppState>,

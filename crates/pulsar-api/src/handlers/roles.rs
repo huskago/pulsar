@@ -51,7 +51,6 @@ fn to_response(r: roles::RoleRow) -> RoleResponse {
     }
 }
 
-// GET /guilds/:guild_id/roles
 pub async fn list_roles(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -68,7 +67,6 @@ pub async fn list_roles(
     Ok(Json(rows.into_iter().map(to_response).collect()))
 }
 
-// POST /guilds/:guild_id/roles
 pub async fn create_role(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -115,7 +113,6 @@ pub async fn create_role(
     Ok(Json(to_response(row)))
 }
 
-// PATCH /guilds/:guild_id/roles/:role_id
 pub async fn update_role(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -131,7 +128,6 @@ pub async fn update_role(
     }
     perms::check_permission(&state.db, guild_id, user_id, Permissions::MANAGE_ROLES).await?;
 
-    // Load the current role to merge the fields
     let existing_roles = roles::find_by_guild(&state.db, guild_id).await?;
     let current = existing_roles.iter().find(|r| r.id == role_id)
         .ok_or(AppError::NotFound("Role not found".into()))?;
@@ -155,7 +151,6 @@ pub async fn update_role(
     Ok(Json(to_response(row)))
 }
 
-// DELETE /guilds/:guild_id/roles/:role_id
 pub async fn delete_role(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -177,7 +172,6 @@ pub async fn delete_role(
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
 
-// PUT /guilds/:guild_id/roles/:role_id/members
 pub async fn assign_role(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -205,7 +199,6 @@ pub async fn assign_role(
     Ok(Json(serde_json::json!({ "assigned": true })))
 }
 
-// DELETE /guilds/:guild_id/roles/:role_id/members/:user_id
 pub async fn unassign_role(
     auth: AuthUser,
     State(state): State<AppState>,

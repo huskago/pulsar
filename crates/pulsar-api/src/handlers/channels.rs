@@ -38,7 +38,6 @@ pub struct MessageResponse {
     pub edited_timestamp: Option<i64>,
 }
 
-// POST /guilds/:guild_id/channels
 pub async fn create_channel(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -96,7 +95,6 @@ pub async fn create_channel(
     }))
 }
 
-// GET /guilds/:guild_id/channels
 pub async fn list_channels(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -131,7 +129,6 @@ pub async fn list_channels(
     Ok(Json(response))
 }
 
-// GET /channels/:channel_id/messages?limit=50&before=snowflake_id
 pub async fn list_messages(
     auth: AuthUser,
     State(state): State<AppState>,
