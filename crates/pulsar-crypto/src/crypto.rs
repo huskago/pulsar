@@ -129,13 +129,12 @@ mod tests {
     }
 
     #[test]
-    fn wrong_key_fails_decryption() {
+    fn wrong_kek_fails_to_open_dek() {
         let mgr1 = manager();
         let mgr2 = CryptoManager::from_hex(&"cd".repeat(32)).unwrap();
-        let dek1 = mgr1.generate_dek();
-        let dek2 = mgr2.generate_dek();
-        let ct = mgr1.encrypt_message(&dek1, "secret").unwrap();
-        assert!(mgr1.decrypt_message(&dek2, &ct).is_err());
+        let dek = mgr1.generate_dek();
+        let sealed = mgr1.seal_dek(&dek).unwrap();
+        assert!(mgr2.open_dek(&sealed).is_err(), "Opening a DEK with the wrong KEK must fail");
     }
 
     #[test]
