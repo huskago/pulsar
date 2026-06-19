@@ -1,6 +1,7 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use pulsar_common::error::AppError;
 
@@ -8,6 +9,8 @@ use pulsar_common::error::AppError;
 pub struct Claims {
     pub sub: String,
     pub username: String,
+    pub session_id: String,
+    pub jti: String,
     pub exp: i64,
     pub iat: i64,
 }
@@ -27,22 +30,29 @@ impl JwtManager {
         }
     }
 
-    pub fn generate_token(&self, user_id: &str, username: &str) -> Result<String, AppError> {
+    pub fn generate_token(
+        &self,
+        user_id: &str,
+        username: &str,
+        session_id: Uuid,
+    ) -> Result<String, AppError> {
         let now = Utc::now();
         let claims = Claims {
             sub: user_id.to_string(),
             username: username.to_string(),
+            session_id: session_id.to_string(),
+            jti: Uuid::new_v4().to_string(),
             exp: (now + self.access_token_ttl).timestamp(),
             iat: now.timestamp(),
         };
 
-        jsonwebtoken::encode(&Header::default(), &claims, &self.encoding_key)
+        jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &self.encoding_key)
             .map_err(|e| AppError::Internal(anyhow::anyhow!("JWT encode error: {}", e)))
     }
 
     pub fn validate_token(&self, token: &str) -> Result<Claims, AppError> {
         let mut validation = Validation::new(Algorithm::HS256);
-        validation.set_required_spec_claims(&["sub", "exp", "iat"]);
+        validation.set_required_spec_claims(&["sub", "exp", "iat", "jti", "session_id"]);
 
         let token_data: TokenData<Claims> =
             jsonwebtoken::decode(token, &self.decoding_key, &validation)

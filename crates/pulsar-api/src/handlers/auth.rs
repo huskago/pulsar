@@ -45,9 +45,11 @@ pub async fn register(
     )
     .await?;
 
-    let token = state
-        .jwt
-        .generate_token(&row.id.to_string(), &row.username)?;
+    let token = state.jwt.generate_token(
+        &row.id.to_string(),
+        &row.username,
+        uuid::Uuid::nil(),
+    )?;
 
     let user = User {
         id: Snowflake(row.id),
@@ -77,9 +79,11 @@ pub async fn login(
         return Err(AppError::Unauthorized);
     }
 
-    let token = state
-        .jwt
-        .generate_token(&row.id.to_string(), &row.username)?;
+    let token = state.jwt.generate_token(
+        &row.id.to_string(),
+        &row.username,
+        uuid::Uuid::nil(),
+    )?;
 
     let user = User {
         id: Snowflake(row.id),
