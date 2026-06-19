@@ -70,7 +70,7 @@ pub async fn create_channel(
         return Err(AppError::BadRequest("Invalid channel kind".into()));
     }
 
-    let channel_id = chrono::Utc::now().timestamp_millis();
+    let channel_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
     let existing = channels::find_by_guild(&state.db, guild_id).await?;
     let position = existing.len() as i32;

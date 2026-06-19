@@ -73,8 +73,7 @@ pub async fn open_dm(
     let channel_id = match dms::find_between(&state.db, user_id, target_id).await? {
         Some(id) => id,
         None => {
-            // Créer un nouveau DM channel
-            let new_id = chrono::Utc::now().timestamp_millis();
+            let new_id = pulsar_common::models::snowflake::Snowflake::generate().0;
             dms::create(&state.db, new_id, user_id, target_id).await?;
             info!(channel_id = %new_id, user_a = %user_id, user_b = %target_id, "DM channel created");
             new_id
@@ -158,7 +157,7 @@ pub async fn create_group_dm(
         return Err(AppError::BadRequest("Need at least 1 other participant".into()));
     }
 
-    let channel_id = chrono::Utc::now().timestamp_millis();
+    let channel_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
     sqlx::query(
         "INSERT INTO channels (id, guild_id, name, kind, position)

@@ -57,7 +57,10 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
     let hello = ServerEvent::Hello {
         heartbeat_interval: 45000,
     };
-    let hello_json = serde_json::to_string(&hello).unwrap();
+    let hello_json = match serde_json::to_string(&hello) {
+        Ok(j) => j,
+        Err(e) => { error!("Failed to serialize Hello: {}", e); state.connections.remove(&user_id).await; return; }
+    };
     if sender.send(Message::Text(hello_json.into())).await.is_err() {
         state.connections.remove(&user_id).await;
         return;
@@ -91,11 +94,25 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
     };
 
     // NATS chat task -> ConnectionManager
+    // subject format: chat.{guild_id}.{channel_id}
     let chat_connections = state.connections.clone();
     let chat_user_id = user_id.clone();
+    let chat_db = state.db.clone();
+    let chat_uid: i64 = user_id.parse().unwrap_or(0);
     let nats_chat_task = tokio::spawn(async move {
         let mut sub = nats_chat_sub;
         while let Some(msg) = sub.next().await {
+            let subject = msg.subject.as_str();
+            let guild_id: i64 = match subject.split('.').nth(1).and_then(|s| s.parse().ok()) {
+                Some(id) => id,
+                None => continue,
+            };
+            let is_member = pulsar_db::repo::guilds::is_member(&chat_db, guild_id, chat_uid)
+                .await
+                .unwrap_or(false);
+            if !is_member {
+                continue;
+            }
             let event: ServerEvent = match serde_json::from_slice(&msg.payload) {
                 Ok(e) => e,
                 Err(_) => continue,
@@ -105,11 +122,25 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
     });
 
     // NATS typing task -> ConnectionManager
+    // subject format: typing.{guild_id}.{channel_id}
     let typing_connections = state.connections.clone();
     let typing_user_id = user_id.clone();
+    let typing_db = state.db.clone();
+    let typing_uid: i64 = user_id.parse().unwrap_or(0);
     let nats_typing_task = tokio::spawn(async move {
         let mut sub = nats_typing_sub;
         while let Some(msg) = sub.next().await {
+            let subject = msg.subject.as_str();
+            let guild_id: i64 = match subject.split('.').nth(1).and_then(|s| s.parse().ok()) {
+                Some(id) => id,
+                None => continue,
+            };
+            let is_member = pulsar_db::repo::guilds::is_member(&typing_db, guild_id, typing_uid)
+                .await
+                .unwrap_or(false);
+            if !is_member {
+                continue;
+            }
             let event: ServerEvent = match serde_json::from_slice(&msg.payload) {
                 Ok(e) => e,
                 Err(_) => continue,
@@ -190,6 +221,12 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     });
 
+    let send_abort = send_task.abort_handle();
+    let recv_abort = recv_task.abort_handle();
+    let chat_abort = nats_chat_task.abort_handle();
+    let typing_abort = nats_typing_task.abort_handle();
+    let dm_abort = nats_dm_task.abort_handle();
+
     tokio::select! {
         _ = send_task => {},
         _ = recv_task => {},
@@ -197,6 +234,13 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         _ = nats_typing_task => {},
         _ = nats_dm_task => {},
     }
+
+    // Abort all remaining tasks, dropping a JoinHandle detaches but does not cancel.
+    send_abort.abort();
+    recv_abort.abort();
+    chat_abort.abort();
+    typing_abort.abort();
+    dm_abort.abort();
 
     state.connections.remove(&user_id).await;
     info!(user_id = %user_id, "Client disconnected from gateway");
@@ -296,7 +340,7 @@ async fn handle_client_message(
                 return;
             }
 
-            let msg_id = chrono::Utc::now().timestamp_millis();
+            let msg_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
             if let Err(e) =
                 pulsar_db::repo::messages::insert(db, msg_id, ch_id, u_id, &content).await
@@ -307,7 +351,7 @@ async fn handle_client_message(
 
             let mut attachment_payloads = Vec::new();
             for att in &attachments {
-                let att_id = chrono::Utc::now().timestamp_nanos_opt().unwrap();
+                let att_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
                 match pulsar_db::repo::attachments::insert(
                     db,
@@ -326,8 +370,7 @@ async fn handle_client_message(
                         attachment_payloads.push(att.clone());
                     }
                     Err(e) => {
-                        error!(att_id = %att_id, msg_id = %msg_id, error = %e, "Failed to insert attachment");
-                        attachment_payloads.push(att.clone());
+                        error!(att_id = %att_id, msg_id = %msg_id, error = %e, "Failed to insert attachment, skipping from payload");
                     }
                 }
             }
@@ -343,7 +386,10 @@ async fn handle_client_message(
             };
 
             let event = ServerEvent::MessageCreate(message);
-            let payload = serde_json::to_vec(&event).unwrap();
+            let payload = match serde_json::to_vec(&event) {
+                Ok(p) => p,
+                Err(e) => { error!("Failed to serialize MessageCreate: {}", e); return; }
+            };
 
             let subject = if channel.kind == "dm" {
                 format!("dm.{}", channel_id)
@@ -360,7 +406,10 @@ async fn handle_client_message(
                 channel_id: channel_id.clone(),
                 user_id: user_id.to_string(),
             };
-            let payload = serde_json::to_vec(&event).unwrap();
+            let payload = match serde_json::to_vec(&event) {
+                Ok(p) => p,
+                Err(e) => { error!("Failed to serialize TypingStart: {}", e); return; }
+            };
 
             let subject = subjects::typing_channel("default", &channel_id);
             let _ = nats.publish(&subject, &payload).await;

@@ -37,14 +37,14 @@ pub async fn create_guild(
         .sub
         .parse()
         .map_err(|_| AppError::Unauthorized)?;
-    let guild_id = chrono::Utc::now().timestamp_millis();
+    let guild_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
     let guild = guilds::insert(&state.db, guild_id, &payload.name, user_id).await?;
 
-    let role_id = chrono::Utc::now().timestamp_millis() + 1;
+    let role_id = pulsar_common::models::snowflake::Snowflake::generate().0;
     roles::create_default_role(&state.db, role_id, guild_id, Permissions::DEFAULT).await?;
 
-    let channel_id = guild_id + 1;
+    let channel_id = pulsar_common::models::snowflake::Snowflake::generate().0;
     channels_repo::insert(&state.db, channel_id, guild_id, "general", "text", 0).await?;
 
     info!(guild_id = %guild.id, "Guild created with @everyone role");

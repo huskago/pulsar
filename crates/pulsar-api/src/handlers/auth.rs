@@ -35,7 +35,7 @@ pub async fn register(
 
     let password_hash = password::hash_password(payload.password).await?;
 
-    let user_id = chrono::Utc::now().timestamp_millis();
+    let user_id = Snowflake::generate().0;
 
     let row = users::insert(
         &state.db,

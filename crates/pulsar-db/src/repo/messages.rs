@@ -41,10 +41,13 @@ pub async fn find_by_channel(
     match before {
         Some(before_id) => {
             sqlx::query_as::<_, MessageRow>(
-                "SELECT * FROM messages
-                 WHERE channel_id = $1 AND id < $2
-                 ORDER BY id ASC
-                 LIMIT $3",
+                "SELECT * FROM (
+                     SELECT * FROM messages
+                     WHERE channel_id = $1 AND id < $2
+                     ORDER BY id DESC
+                     LIMIT $3
+                 ) sub
+                 ORDER BY id ASC",
             )
             .bind(channel_id)
             .bind(before_id)
@@ -54,10 +57,13 @@ pub async fn find_by_channel(
         }
         None => {
             sqlx::query_as::<_, MessageRow>(
-                "SELECT * FROM messages
-                 WHERE channel_id = $1
-                 ORDER BY id ASC
-                 LIMIT $2",
+                "SELECT * FROM (
+                     SELECT * FROM messages
+                     WHERE channel_id = $1
+                     ORDER BY id DESC
+                     LIMIT $2
+                 ) sub
+                 ORDER BY id ASC",
             )
             .bind(channel_id)
             .bind(limit)
