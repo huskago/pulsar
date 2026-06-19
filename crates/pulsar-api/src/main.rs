@@ -16,6 +16,7 @@ use tracing_subscriber::EnvFilter;
 
 mod handlers;
 mod middleware;
+mod redis_client;
 mod state;
 
 use handlers::{auth, users, guilds, channels, invites, voice, uploads, roles, dms, relationships};
@@ -56,11 +57,21 @@ async fn main() {
         .await
         .expect("Failed to connect to MinIO");
 
+    let crypto = pulsar_crypto::CryptoManager::from_env()
+        .expect("Invalid KEK_SECRET, must be 64 hex chars (32 bytes)");
+
+    let redis_url = std::env::var("REDIS_URL")
+        .unwrap_or_else(|_| "redis://localhost:6379".to_string());
+    let redis = redis_client::create_pool(&redis_url)
+        .expect("Failed to create Redis pool");
+
     let state = AppState {
         db,
         jwt,
         livekit: LiveKitConfig::from_env(),
         storage,
+        redis,
+        crypto,
     };
 
     let cors = CorsLayer::new()

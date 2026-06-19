@@ -8,6 +8,7 @@ use tracing_subscriber::EnvFilter;
 
 mod connection;
 mod handler;
+mod redis_client;
 mod state;
 
 use connection::ConnectionManager;
@@ -35,11 +36,21 @@ async fn main() {
         .await
         .expect("Failed to connect to NATS");
 
+    let crypto = pulsar_crypto::CryptoManager::from_env()
+        .expect("Invalid KEK_SECRET, must be 64 hex chars (32 bytes)");
+
+    let redis_url = std::env::var("REDIS_URL")
+        .unwrap_or_else(|_| "redis://localhost:6379".to_string());
+    let redis = redis_client::create_pool(&redis_url)
+        .expect("Failed to create Redis pool");
+
     let state = GatewayState {
         connections: ConnectionManager::new(),
         jwt,
         nats,
         db,
+        redis,
+        crypto,
     };
 
     let app = Router::new()

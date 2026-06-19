@@ -1,5 +1,7 @@
 use crate::connection::ConnectionManager;
+use deadpool_redis::Pool as RedisPool;
 use pulsar_auth::jwt::JwtManager;
+use pulsar_crypto::CryptoManager;
 use pulsar_messaging::nats_client::NatsClient;
 use sqlx::PgPool;
 
@@ -9,4 +11,6 @@ pub struct GatewayState {
     pub jwt: JwtManager,
     pub nats: NatsClient,
     pub db: PgPool,
+    pub redis: RedisPool,
+    pub crypto: CryptoManager,
 }

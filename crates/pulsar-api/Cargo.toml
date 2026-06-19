@@ -8,6 +8,9 @@ pulsar-common = { path = "../pulsar-common" }
 pulsar-auth = { path = "../pulsar-auth" }
 pulsar-db = { path = "../pulsar-db" }
 pulsar-storage = { path = "../pulsar-storage" }
+pulsar-crypto = { workspace = true }
+deadpool-redis = { workspace = true }
+redis = { workspace = true }
 tokio.workspace = true
 axum.workspace = true
 axum-extra.workspace = true

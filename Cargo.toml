@@ -54,3 +54,5 @@ aes-gcm = "0.10"
 hex = "0.4"
 sha2 = "0.11"
 pulsar-crypto = { path = "crates/pulsar-crypto" }
+deadpool-redis = { version = "0.23", features = ["rt_tokio_1"] }
+redis = { version = "1.2", features = ["tokio-comp"] }
