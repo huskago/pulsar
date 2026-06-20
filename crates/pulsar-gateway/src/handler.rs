@@ -404,6 +404,9 @@ async fn handle_client_message(
             };
 
             let subject = if channel.kind == "dm" {
+                if let Err(e) = pulsar_db::repo::dms::update_last_message_at(&state.db, ch_id).await {
+                    error!("Failed to update last_message_at for DM {}: {}", ch_id, e);
+                }
                 format!("dm.{}", channel_id)
             } else if let Some(gid) = channel.guild_id {
                 subjects::chat_channel(&gid.to_string(), &channel_id)

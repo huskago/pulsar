@@ -5,6 +5,7 @@ use pulsar_common::error::AppError;
 pub struct DmChannelRow {
     pub channel_id: i64,
     pub user_id: i64,
+    pub last_message_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -75,17 +76,28 @@ pub async fn list_conversations(
             d2.user_id AS other_user_id,
             u.username AS other_username,
             u.avatar_url AS other_avatar_url,
-            (SELECT MAX(created_at) FROM messages WHERE channel_id = d1.channel_id) AS last_message_at
+            d1.last_message_at
          FROM dm_channels d1
          INNER JOIN dm_channels d2 ON d1.channel_id = d2.channel_id AND d2.user_id != d1.user_id
          INNER JOIN users u ON u.id = d2.user_id
          WHERE d1.user_id = $1
-         ORDER BY last_message_at DESC NULLS LAST"
+         ORDER BY d1.last_message_at DESC NULLS LAST"
     )
         .bind(user_id)
         .fetch_all(pool)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
+}
+
+pub async fn update_last_message_at(pool: &PgPool, channel_id: i64) -> Result<(), AppError> {
+    sqlx::query(
+        "UPDATE dm_channels SET last_message_at = NOW() WHERE channel_id = $1"
+    )
+        .bind(channel_id)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))?;
+    Ok(())
 }
 
 pub async fn is_participant(

@@ -11,7 +11,9 @@ pub async fn get_channel_dek(state: &GatewayState, channel_id: i64) -> anyhow::R
         .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
         .ok_or_else(|| anyhow::anyhow!("No DEK for channel {}", channel_id))?;
 
-    let _ = crate::redis_client::set_sealed_dek(&state.redis, channel_id, &sealed).await;
+    if let Err(e) = crate::redis_client::set_sealed_dek(&state.redis, channel_id, &sealed).await {
+        tracing::warn!("Failed to cache DEK for channel {}: {}", channel_id, e);
+    }
 
     state.crypto.open_dek(&sealed)
 }
