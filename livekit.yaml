@@ -7,3 +7,6 @@ rtc:
   use_external_ip: true
 logging:
   level: info
+# Replace with strong random keys for production (must match LIVEKIT_API_KEY / LIVEKIT_API_SECRET in .env)
+keys:
+  devkey: secret-must-be-at-least-32-characters-long

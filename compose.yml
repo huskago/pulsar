@@ -4,27 +4,32 @@ services:
     container_name: pulsar-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: pulsar
-      POSTGRES_PASSWORD: pulsar
-      POSTGRES_DB: pulsar
+      POSTGRES_USER: ${POSTGRES_USER:-pulsar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pulsar}
+      POSTGRES_DB: ${POSTGRES_DB:-pulsar}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pulsar"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pulsar}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   nats:
-    image: nats:latest
+    image: nats:2.14-scratch
     container_name: pulsar-nats
     command: "-js"
     restart: unless-stopped
     ports:
       - "4222:4222"
       - "8222:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   minio:
     image: minio/minio
@@ -32,13 +37,19 @@ services:
     restart: unless-stopped
     command: 'server /data --console-address ":9001"'
     environment:
-      MINIO_ROOT_USER: pulsar
-      MINIO_ROOT_PASSWORD: pulsarsecret
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-pulsar}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-pulsarsecret}
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
 
   scylladb:
     image: scylladb/scylla
@@ -69,16 +80,16 @@ services:
       retries: 5
 
   livekit:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.3
     container_name: pulsar-livekit
     restart: unless-stopped
-    command: '--config /etc/livekit/livekit.yaml --keys "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"'
+    command: '--config /etc/livekit/livekit.yaml'
     volumes:
       - ./livekit.yaml:/etc/livekit/livekit.yaml
     ports:
-      - "7880:7880"             # HTTP / WebSocket
-      - "7881:7881"             # RTC over TCP
-      - "50000-50100:50000-50100/udp"  # WebRTC media
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
 
   api:
     build:
@@ -92,27 +103,33 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 3000
-      DATABASE_URL: postgres://pulsar:pulsar@db:5432/pulsar
+      DATABASE_URL: postgres://${POSTGRES_USER:-pulsar}:${POSTGRES_PASSWORD:-pulsar}@db:5432/${POSTGRES_DB:-pulsar}
       NATS_URL: nats://nats:4222
       STORAGE_ENDPOINT: http://minio:9000
       SCYLLA_URL: scylladb:9042
       REDIS_URL: redis://redis:6379
-      # LIVEKIT_URL and STORAGE_PUBLIC_URL come from .env (must be public VPS IP/domain)
+      # LIVEKIT_URL and ALLOWED_ORIGINS come from .env (must be public URL/domain)
     ports:
       - "3000:3000"
     depends_on:
       db:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       livekit:
         condition: service_started
       scylladb:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   gateway:
     build:
@@ -126,7 +143,7 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 3001
-      DATABASE_URL: postgres://pulsar:pulsar@db:5432/pulsar
+      DATABASE_URL: postgres://${POSTGRES_USER:-pulsar}:${POSTGRES_PASSWORD:-pulsar}@db:5432/${POSTGRES_DB:-pulsar}
       NATS_URL: nats://nats:4222
       SCYLLA_URL: scylladb:9042
       REDIS_URL: redis://redis:6379
@@ -136,11 +153,17 @@ services:
       db:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
       scylladb:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   web:
     build:
@@ -155,8 +178,10 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - api
-      - gateway
+      api:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
 
 volumes:
   postgres_data:

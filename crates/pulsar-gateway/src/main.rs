@@ -1,5 +1,6 @@
-use axum::{routing::get, Router};
+use axum::{routing::get, Json, Router};
 use pulsar_auth::jwt::JwtManager;
+use serde::Serialize;
 use pulsar_db::pool::{self, DatabaseConfig};
 use pulsar_messaging::nats_client::{NatsClient, NatsConfig};
 use pulsar_scylla::ScyllaClient;
@@ -17,6 +18,19 @@ mod state;
 use connection::ConnectionManager;
 use state::GatewayState;
 
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    version: &'static str,
+}
+
+async fn health() -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: "ok",
+        version: env!("CARGO_PKG_VERSION"),
+    })
+}
+
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
@@ -27,6 +41,7 @@ async fn main() {
 
     let jwt_secret = std::env::var("JWT_SECRET")
         .expect("JWT_SECRET must be set");
+    assert!(jwt_secret.len() >= 32, "JWT_SECRET must be at least 32 characters");
     let jwt = JwtManager::new(&jwt_secret);
 
     let db_config = DatabaseConfig::from_env();
@@ -69,6 +84,7 @@ async fn main() {
     };
 
     let app = Router::new()
+        .route("/health", get(health))
         .route("/gateway", get(handler::ws_upgrade))
         .with_state(state);
 
@@ -78,9 +94,11 @@ async fn main() {
         .and_then(|v| v.parse::<u16>().ok())
         .unwrap_or(3001);
     let addr = format!("{}:{}", host, port);
-    let listener = TcpListener::bind(&addr).await.unwrap();
+    let listener = TcpListener::bind(&addr).await
+        .unwrap_or_else(|e| panic!("Failed to bind to {}: {}", addr, e));
 
     info!("⚡ Pulsar Gateway listening on {}", addr);
 
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app).await
+        .expect("Gateway server failed");
 }

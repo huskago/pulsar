@@ -5,7 +5,7 @@ use axum::{
 };
 use pulsar_common::error::AppError;
 use pulsar_common::models::message::AttachmentPayload;
-use pulsar_db::repo::{attachments, channel_keys, channels, dms, guilds};
+use pulsar_db::repo::{attachments, channel_keys, channels, dms, guilds, roles};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::info;
@@ -230,4 +230,194 @@ pub async fn list_messages(
 pub struct MessageQuery {
     pub limit: Option<i64>,
     pub before: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateChannel {
+    pub name: String,
+}
+
+pub async fn update_channel(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path(channel_id): Path<String>,
+    Json(payload): Json<UpdateChannel>,
+) -> Result<Json<ChannelResponse>, AppError> {
+    let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let channel_id: i64 = channel_id.parse().map_err(|_| AppError::BadRequest("Invalid channel ID".into()))?;
+
+    let channel = channels::find_by_id(&state.db, channel_id)
+        .await?
+        .ok_or(AppError::NotFound("Channel not found".into()))?;
+
+    let guild_id = channel.guild_id.ok_or(AppError::Forbidden)?;
+
+    if !guilds::is_member(&state.db, guild_id, user_id).await? {
+        return Err(AppError::Forbidden);
+    }
+    perms::check_permission(&state.db, guild_id, user_id, Permissions::MANAGE_CHANNELS).await?;
+
+    if payload.name.is_empty() || payload.name.len() > 100 {
+        return Err(AppError::BadRequest("Channel name must be between 1 and 100 characters".into()));
+    }
+
+    let updated = channels::update(&state.db, channel_id, &payload.name).await?;
+
+    Ok(Json(ChannelResponse {
+        id: updated.id.to_string(),
+        guild_id: updated.guild_id.unwrap().to_string(),
+        name: updated.name,
+        kind: updated.kind,
+        position: updated.position,
+    }))
+}
+
+pub async fn delete_channel(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path(channel_id): Path<String>,
+) -> Result<axum::http::StatusCode, AppError> {
+    let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let channel_id: i64 = channel_id.parse().map_err(|_| AppError::BadRequest("Invalid channel ID".into()))?;
+
+    let channel = channels::find_by_id(&state.db, channel_id)
+        .await?
+        .ok_or(AppError::NotFound("Channel not found".into()))?;
+
+    let guild_id = channel.guild_id.ok_or(AppError::Forbidden)?;
+
+    if !guilds::is_member(&state.db, guild_id, user_id).await? {
+        return Err(AppError::Forbidden);
+    }
+    perms::check_permission(&state.db, guild_id, user_id, Permissions::MANAGE_CHANNELS).await?;
+
+    if let Err(e) = pulsar_scylla::messages::delete_by_channel(&state.scylla, channel_id).await {
+        tracing::warn!("Failed to delete ScyllaDB messages for channel {}: {}", channel_id, e);
+    }
+
+    channels::delete(&state.db, channel_id).await?;
+    info!(channel_id = %channel_id, "Channel deleted");
+
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EditMessage {
+    pub content: String,
+}
+
+pub async fn edit_message(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path((channel_id, message_id)): Path<(String, String)>,
+    Json(payload): Json<EditMessage>,
+) -> Result<Json<MessageResponse>, AppError> {
+    let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let channel_id: i64 = channel_id.parse().map_err(|_| AppError::BadRequest("Invalid channel ID".into()))?;
+    let message_id: i64 = message_id.parse().map_err(|_| AppError::BadRequest("Invalid message ID".into()))?;
+
+    let channel = channels::find_by_id(&state.db, channel_id)
+        .await?
+        .ok_or(AppError::NotFound("Channel not found".into()))?;
+
+    if channel.kind == "dm" {
+        if !dms::is_participant(&state.db, channel_id, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+    } else if let Some(gid) = channel.guild_id {
+        if !guilds::is_member(&state.db, gid, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+    } else {
+        return Err(AppError::Forbidden);
+    }
+
+    let msg = pulsar_scylla::messages::find_one(&state.scylla, channel_id, message_id)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("ScyllaDB read: {}", e)))?
+        .ok_or(AppError::NotFound("Message not found".into()))?;
+
+    if msg.author_id != user_id {
+        return Err(AppError::Forbidden);
+    }
+
+    if payload.content.is_empty() || payload.content.len() > 4000 {
+        return Err(AppError::BadRequest("Content must be between 1 and 4000 characters".into()));
+    }
+
+    let dek = get_channel_dek(&state, channel_id).await?;
+    let encrypted = state.crypto.encrypt_message(&dek, &payload.content)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Encrypt failed: {}", e)))?;
+
+    let edited_at = chrono::Utc::now().timestamp_millis();
+    pulsar_scylla::messages::update_content(&state.scylla, channel_id, message_id, encrypted, edited_at)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("ScyllaDB update: {}", e)))?;
+
+    Ok(Json(MessageResponse {
+        id: message_id.to_string(),
+        channel_id: channel_id.to_string(),
+        author_id: user_id.to_string(),
+        content: payload.content,
+        attachments: vec![],
+        timestamp: message_id,
+        edited_timestamp: Some(edited_at),
+    }))
+}
+
+pub async fn delete_message(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path((channel_id, message_id)): Path<(String, String)>,
+) -> Result<axum::http::StatusCode, AppError> {
+    let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let channel_id: i64 = channel_id.parse().map_err(|_| AppError::BadRequest("Invalid channel ID".into()))?;
+    let message_id: i64 = message_id.parse().map_err(|_| AppError::BadRequest("Invalid message ID".into()))?;
+
+    let channel = channels::find_by_id(&state.db, channel_id)
+        .await?
+        .ok_or(AppError::NotFound("Channel not found".into()))?;
+
+    let guild_id = if channel.kind == "dm" {
+        if !dms::is_participant(&state.db, channel_id, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+        None
+    } else if let Some(gid) = channel.guild_id {
+        if !guilds::is_member(&state.db, gid, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+        Some(gid)
+    } else {
+        return Err(AppError::Forbidden);
+    };
+
+    let msg = pulsar_scylla::messages::find_one(&state.scylla, channel_id, message_id)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("ScyllaDB read: {}", e)))?
+        .ok_or(AppError::NotFound("Message not found".into()))?;
+
+    if msg.author_id != user_id {
+        if let Some(gid) = guild_id {
+            let perms_bits = roles::get_member_permissions(&state.db, gid, user_id).await?;
+            if !Permissions::new(perms_bits).has(Permissions::MANAGE_MESSAGES) {
+                return Err(AppError::Forbidden);
+            }
+        } else {
+            return Err(AppError::Forbidden);
+        }
+    }
+
+    let deleted_attachments = attachments::delete_by_message(&state.db, message_id).await?;
+    for att in deleted_attachments {
+        if let Err(e) = state.storage.delete(&att.storage_key).await {
+            tracing::warn!("Failed to delete attachment {} from storage: {}", att.storage_key, e);
+        }
+    }
+
+    pulsar_scylla::messages::delete_one(&state.scylla, channel_id, message_id)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("ScyllaDB delete: {}", e)))?;
+
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }

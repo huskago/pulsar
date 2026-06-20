@@ -5,6 +5,7 @@ use axum::{
 use pulsar_common::error::AppError;
 use pulsar_db::repo::{relationships, users};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::info;
 
 use crate::{middleware::auth::AuthUser, state::AppState};
@@ -171,23 +172,27 @@ pub async fn list_relationships(
         _ => vec!["friend"],
     };
 
-    let mut results = Vec::new();
-
+    let mut all_rows = Vec::new();
     for kind in kinds {
         let rows = relationships::list_by_kind(&state.db, user_id, kind).await?;
-        for row in rows {
-            let target = users::find_by_id(&state.db, row.target_id).await?;
-            if let Some(t) = target {
-                results.push(RelationshipResponse {
-                    user_id: row.target_id.to_string(),
-                    username: t.username,
-                    avatar_url: t.avatar_url,
-                    kind: row.kind,
-                    created_at: row.created_at.to_rfc3339(),
-                });
-            }
-        }
+        all_rows.extend(rows);
     }
+
+    let target_ids: Vec<i64> = all_rows.iter().map(|r| r.target_id).collect();
+    let user_list = users::find_by_ids(&state.db, &target_ids).await?;
+    let user_map: HashMap<i64, _> = user_list.into_iter().map(|u| (u.id, u)).collect();
+
+    let results: Vec<RelationshipResponse> = all_rows.into_iter()
+        .filter_map(|row| {
+            user_map.get(&row.target_id).map(|u| RelationshipResponse {
+                user_id: row.target_id.to_string(),
+                username: u.username.clone(),
+                avatar_url: u.avatar_url.clone(),
+                kind: row.kind,
+                created_at: row.created_at.to_rfc3339(),
+            })
+        })
+        .collect();
 
     Ok(Json(results))
 }
@@ -203,16 +208,18 @@ pub async fn get_mutual_friends(
 
     let mutual_ids = relationships::mutual_friends(&state.db, user_id, target_id).await?;
 
-    let mut results = Vec::new();
-    for mid in mutual_ids {
-        if let Some(u) = users::find_by_id(&state.db, mid).await? {
-            results.push(MutualFriendsResponse {
+    let user_list = users::find_by_ids(&state.db, &mutual_ids).await?;
+    let user_map: HashMap<i64, _> = user_list.into_iter().map(|u| (u.id, u)).collect();
+
+    let results: Vec<MutualFriendsResponse> = mutual_ids.into_iter()
+        .filter_map(|mid| {
+            user_map.get(&mid).map(|u| MutualFriendsResponse {
                 user_id: mid.to_string(),
-                username: u.username,
-                avatar_url: u.avatar_url,
-            });
-        }
-    }
+                username: u.username.clone(),
+                avatar_url: u.avatar_url.clone(),
+            })
+        })
+        .collect();
 
     Ok(Json(results))
 }
