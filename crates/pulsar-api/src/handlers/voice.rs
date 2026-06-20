@@ -1,7 +1,8 @@
 use axum::{extract::State, Json};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use pulsar_common::error::AppError;
-use pulsar_db::repo::{channels, dms, guilds};
+use pulsar_common::permissions::Permissions;
+use pulsar_db::repo::{channels, dms, guilds, roles};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
@@ -71,6 +72,16 @@ pub async fn get_voice_token(
         if !guilds::is_member(&state.db, guild_id, user_id).await? {
             return Err(AppError::Forbidden);
         }
+
+        let guild = guilds::find_by_id(&state.db, guild_id).await?
+            .ok_or(AppError::NotFound("Guild not found".into()))?;
+        if guild.owner_id != user_id {
+            let perms_bits = roles::get_member_permissions(&state.db, guild_id, user_id).await?;
+            if !Permissions::new(perms_bits).has(Permissions::CONNECT_VOICE) {
+                return Err(AppError::Forbidden);
+            }
+        }
+
         format!("{}_{}", guild_id, channel_id)
     } else {
         return Err(AppError::BadRequest("Channel does not support voice".into()));

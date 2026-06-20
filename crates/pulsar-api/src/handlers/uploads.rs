@@ -3,12 +3,21 @@ use axum_extra::extract::Multipart;
 use pulsar_common::error::AppError;
 use pulsar_db::repo::{channel_keys, channels, dms, guilds};
 use serde::Serialize;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{middleware::auth::AuthUser, state::AppState};
 
 const MAX_FILE_SIZE: usize = 25 * 1024 * 1024;
 const PRESIGNED_TTL_SECS: u64 = 900; // 15 minutes
+
+const ALLOWED_CONTENT_TYPES: &[&str] = &[
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+    "video/mp4", "video/webm",
+    "audio/mpeg", "audio/ogg", "audio/wav",
+    "application/pdf",
+    "text/plain",
+    "application/zip",
+];
 
 #[derive(Debug, Serialize)]
 pub struct UploadResponse {
@@ -70,6 +79,12 @@ pub async fn upload_file(
     let file_data = file_data.ok_or(AppError::BadRequest("Missing file".into()))?;
     let file_name = file_name.unwrap_or_else(|| "unnamed".to_string());
     let content_type = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+
+    if !ALLOWED_CONTENT_TYPES.contains(&content_type.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "Content type '{}' is not allowed", content_type
+        )));
+    }
 
     let channel_id_num: i64 = channel_id_str
         .parse()
@@ -144,7 +159,9 @@ pub async fn get_channel_dek(
         .await?
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("No DEK for channel {}", channel_id)))?;
 
-    let _ = crate::redis_client::set_sealed_dek(&state.redis, channel_id, &sealed).await;
+    if let Err(e) = crate::redis_client::set_sealed_dek(&state.redis, channel_id, &sealed).await {
+        warn!("Failed to cache DEK for channel {}: {}", channel_id, e);
+    }
 
     state
         .crypto
@@ -157,7 +174,30 @@ pub async fn get_attachment_url(
     State(state): State<AppState>,
     Path(key): Path<String>,
 ) -> Result<axum::Json<serde_json::Value>, AppError> {
-    let _ = auth;
+    let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+
+    let channel_id: i64 = key
+        .split('/')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| AppError::BadRequest("Invalid attachment key".into()))?;
+
+    let channel = channels::find_by_id(&state.db, channel_id)
+        .await?
+        .ok_or(AppError::NotFound("Channel not found".into()))?;
+
+    if channel.kind == "dm" {
+        if !dms::is_participant(&state.db, channel_id, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+    } else if let Some(gid) = channel.guild_id {
+        if !guilds::is_member(&state.db, gid, user_id).await? {
+            return Err(AppError::Forbidden);
+        }
+    } else {
+        return Err(AppError::Forbidden);
+    }
+
     let url = state
         .storage
         .generate_presigned_url(&key, PRESIGNED_TTL_SECS)

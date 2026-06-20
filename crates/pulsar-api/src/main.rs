@@ -1,16 +1,17 @@
 use axum::extract::DefaultBodyLimit;
-use axum::http::header;
+use axum::http::{header, HeaderValue};
 use axum::{
     routing::{get, post, patch, put, delete}, Json,
     Router,
 };
+use std::net::SocketAddr;
 use pulsar_auth::jwt::JwtManager;
 use pulsar_common::config::{AppConfig, LiveKitConfig};
 use pulsar_db::pool::{self, DatabaseConfig};
 use pulsar_storage::{StorageClient, StorageConfig};
 use serde::Serialize;
 use tokio::net::TcpListener;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -46,6 +47,7 @@ async fn main() {
     let config = AppConfig::from_env();
     let jwt_secret = std::env::var("JWT_SECRET")
         .expect("JWT_SECRET must be set");
+    assert!(jwt_secret.len() >= 32, "JWT_SECRET must be at least 32 characters");
     let jwt = JwtManager::new(&jwt_secret);
 
     let db_config = DatabaseConfig::from_env();
@@ -71,6 +73,8 @@ async fn main() {
         .await
         .expect("Failed to connect to ScyllaDB");
 
+    let auth_limiter = middleware::rate_limit::AuthRateLimiter::new();
+
     let state = AppState {
         db,
         jwt,
@@ -81,21 +85,43 @@ async fn main() {
         scylla,
     };
 
+    let allowed_origins: Vec<HeaderValue> = std::env::var("ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| "http://localhost:5173".to_string())
+        .split(',')
+        .filter_map(|o| o.trim().parse().ok())
+        .collect();
+
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(vec![header::CONTENT_TYPE, header::AUTHORIZATION]);
+        .allow_origin(allowed_origins)
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::PATCH,
+            axum::http::Method::DELETE,
+        ])
+        .allow_headers(vec![header::CONTENT_TYPE, header::AUTHORIZATION])
+        .allow_credentials(true);
+
+    let auth_routes = Router::new()
+        .route("/auth/register", post(auth::register))
+        .route("/auth/login", post(auth::login))
+        .route("/auth/refresh", post(auth::refresh))
+        .layer(axum::middleware::from_fn(
+            move |req, next| {
+                let limiter = auth_limiter.clone();
+                middleware::rate_limit::auth_rate_limit_fn(limiter, req, next)
+            }
+        ));
 
     let app = Router::new()
         .route("/health", get(health))
-        .route("/auth/register", post(auth::register))
-        .route("/auth/login", post(auth::login))
+        .merge(auth_routes)
         .route("/invites/{code}", get(invites::get_invite))
-        .route("/auth/refresh", post(auth::refresh))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/sessions", get(auth::list_sessions).delete(auth::revoke_all_sessions))
         .route("/auth/sessions/{id}", delete(auth::revoke_session))
-        .route("/users/me", get(users::get_me))
+        .route("/users/me", get(users::get_me).patch(users::update_me))
         .route("/users/me/settings",
                get(users::get_settings).patch(users::update_settings))
         .route(
@@ -103,12 +129,24 @@ async fn main() {
             get(guilds::list_guilds).post(guilds::create_guild),
         )
         .route(
+            "/guilds/{guild_id}",
+            patch(guilds::update_guild).delete(guilds::delete_guild),
+        )
+        .route(
             "/guilds/{guild_id}/channels",
             get(channels::list_channels).post(channels::create_channel),
         )
         .route(
+            "/channels/{channel_id}",
+            patch(channels::update_channel).delete(channels::delete_channel),
+        )
+        .route(
             "/channels/{channel_id}/messages",
             get(channels::list_messages),
+        )
+        .route(
+            "/channels/{channel_id}/messages/{message_id}",
+            patch(channels::edit_message).delete(channels::delete_message),
         )
         .route(
             "/guilds/{guild_id}/invites",
@@ -139,9 +177,11 @@ async fn main() {
         .layer(cors);
 
     let addr = format!("{}:{}", config.host, config.port);
-    let listener = TcpListener::bind(&addr).await.unwrap();
+    let listener = TcpListener::bind(&addr).await
+        .unwrap_or_else(|e| panic!("Failed to bind to {}: {}", addr, e));
 
     info!("🌟 Pulsar API listening on {}", addr);
 
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await
+        .expect("API server failed");
 }
