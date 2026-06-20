@@ -36,7 +36,7 @@ pub async fn find_by_channel(
     };
 
     let mut messages = Vec::new();
-    for row in result.rows_typed::<(i64, i64, i64, Vec<u8>, Option<i64>)>()? {
+    for row in result.into_rows_result()?.rows::<(i64, i64, i64, Vec<u8>, Option<i64>)>()? {
         let (channel_id, message_id, author_id, content, edited_at) = row?;
         messages.push(ScyllaMessage { channel_id, message_id, author_id, content, edited_at });
     }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
-use scylla::{Session, SessionBuilder};
+use scylla::client::session::Session;
+use scylla::client::session_builder::SessionBuilder;
 use tracing::info;
 
 #[derive(Clone)]
