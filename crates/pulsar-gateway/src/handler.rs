@@ -322,7 +322,6 @@ async fn handle_client_message(
                 return;
             }
 
-            // Retrieve the channel DEK
             let dek = match crate::crypto_helpers::get_channel_dek(state, ch_id).await {
                 Ok(d) => d,
                 Err(e) => {
@@ -331,7 +330,6 @@ async fn handle_client_message(
                 }
             };
 
-            // Encrypt the message content before storing
             let encrypted_content = match state.crypto.encrypt_message(&dek, &content) {
                 Ok(ct) => ct,
                 Err(e) => {
@@ -342,7 +340,6 @@ async fn handle_client_message(
 
             let msg_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
-            // Persist encrypted content to ScyllaDB (replaces pulsar_db::repo::messages::insert)
             let scylla_msg = pulsar_scylla::messages::ScyllaMessage {
                 channel_id: ch_id,
                 message_id: msg_id,
@@ -355,7 +352,6 @@ async fn handle_client_message(
                 return;
             }
 
-            // Build attachment list with presigned URLs
             let mut attachment_payloads = Vec::new();
             for att in &attachments {
                 let url = if !att.key.is_empty() {
@@ -391,12 +387,11 @@ async fn handle_client_message(
                 });
             }
 
-            // Broadcast plaintext content to connected clients via NATS
             let message = pulsar_common::models::message::Message {
                 id: Snowflake(msg_id),
                 channel_id: Snowflake(ch_id),
                 author_id: Snowflake(u_id),
-                content,  // plaintext — encryption is at-rest in ScyllaDB only
+                content, // plaintext — clients receive cleartext; encryption is at-rest in ScyllaDB
                 attachments: attachment_payloads,
                 timestamp: chrono::Utc::now().timestamp_millis(),
                 edited_timestamp: None,

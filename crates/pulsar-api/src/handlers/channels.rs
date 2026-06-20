@@ -169,10 +169,8 @@ pub async fn list_messages(
     let limit = params.limit.unwrap_or(50).min(100) as i32;
     let before = params.before.and_then(|b| b.parse::<i64>().ok());
 
-    // Fetch the channel DEK (Redis cache -> PostgreSQL)
     let dek = get_channel_dek(&state, channel_id).await?;
 
-    // Read encrypted messages from ScyllaDB
     let scylla_rows = pulsar_scylla::messages::find_by_channel(
         &state.scylla,
         channel_id,
@@ -182,7 +180,6 @@ pub async fn list_messages(
     .await
     .map_err(|e| AppError::Internal(anyhow::anyhow!("ScyllaDB read failed: {}", e)))?;
 
-    // Fetch attachments from PostgreSQL
     let message_ids: Vec<i64> = scylla_rows.iter().map(|m| m.message_id).collect();
     let all_attachments = attachments::find_by_messages(&state.db, &message_ids).await?;
 
@@ -191,7 +188,6 @@ pub async fn list_messages(
         att_map.entry(att.message_id).or_default().push(att);
     }
 
-    // Decrypt content and build responses
     let mut response: Vec<MessageResponse> = Vec::with_capacity(scylla_rows.len());
     for row in scylla_rows {
         let content = state

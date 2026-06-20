@@ -91,23 +91,19 @@ pub async fn upload_file(
         return Err(AppError::Forbidden);
     }
 
-    // Fetch the channel DEK (Redis cache -> PostgreSQL)
     let dek = get_channel_dek(&state, channel_id_num).await?;
 
-    // Encrypt the file with the channel DEK
     let encrypted = state
         .crypto
         .encrypt_file(&dek, &file_data)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("File encryption failed: {}", e)))?;
 
-    // Upload the encrypted bytes
     let result = state
         .storage
         .upload(&channel_id_str, &file_name, &content_type, encrypted)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Upload failed: {}", e)))?;
 
-    // Generate a presigned URL (15 min)
     let presigned_url = state
         .storage
         .generate_presigned_url(&result.key, PRESIGNED_TTL_SECS)
@@ -133,12 +129,10 @@ pub async fn upload_file(
     }))
 }
 
-/// Fetch the DEK for a channel: Redis cache -> PostgreSQL -> error if absent.
 pub async fn get_channel_dek(
     state: &AppState,
     channel_id: i64,
 ) -> Result<pulsar_crypto::Dek, AppError> {
-    // 1. Try Redis cache
     if let Ok(Some(sealed)) = crate::redis_client::get_sealed_dek(&state.redis, channel_id).await {
         return state
             .crypto
@@ -146,12 +140,10 @@ pub async fn get_channel_dek(
             .map_err(|e| AppError::Internal(anyhow::anyhow!("DEK open failed: {}", e)));
     }
 
-    // 2. Read from PostgreSQL
     let sealed = channel_keys::find(&state.db, channel_id)
         .await?
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("No DEK for channel {}", channel_id)))?;
 
-    // 3. Cache in Redis
     let _ = crate::redis_client::set_sealed_dek(&state.redis, channel_id, &sealed).await;
 
     state

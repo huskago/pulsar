@@ -87,12 +87,10 @@ async fn main() {
         .allow_headers(vec![header::CONTENT_TYPE, header::AUTHORIZATION]);
 
     let app = Router::new()
-        // Public routes
         .route("/health", get(health))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
         .route("/invites/{code}", get(invites::get_invite))
-        // Protected routes
         .route("/auth/refresh", post(auth::refresh))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/sessions", get(auth::list_sessions).delete(auth::revoke_all_sessions))
