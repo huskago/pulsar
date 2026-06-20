@@ -31,7 +31,7 @@ async fn init_schema(session: &Session) -> anyhow::Result<()> {
     session.query_unpaged(
         "CREATE KEYSPACE IF NOT EXISTS pulsar \
          WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}",
-        &[] as &[u8; 0],
+        (),
     ).await?;
 
     session.query_unpaged(
@@ -43,7 +43,7 @@ async fn init_schema(session: &Session) -> anyhow::Result<()> {
             edited_at   BIGINT, \
             PRIMARY KEY (channel_id, message_id) \
          ) WITH CLUSTERING ORDER BY (message_id DESC)",
-        &[] as &[u8; 0],
+        (),
     ).await?;
 
     info!("ScyllaDB schema initialized");
