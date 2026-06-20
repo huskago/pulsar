@@ -65,6 +65,12 @@ async fn main() {
     let redis = redis_client::create_pool(&redis_url)
         .expect("Failed to create Redis pool");
 
+    let scylla_url = std::env::var("SCYLLA_URL")
+        .unwrap_or_else(|_| "localhost:9042".to_string());
+    let scylla = pulsar_scylla::ScyllaClient::connect(&scylla_url)
+        .await
+        .expect("Failed to connect to ScyllaDB");
+
     let state = AppState {
         db,
         jwt,
@@ -72,6 +78,7 @@ async fn main() {
         storage,
         redis,
         crypto,
+        scylla,
     };
 
     let cors = CorsLayer::new()

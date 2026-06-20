@@ -5,12 +5,13 @@ use axum::{
 };
 use pulsar_common::error::AppError;
 use pulsar_common::models::message::AttachmentPayload;
-use pulsar_db::repo::{attachments, channel_keys, channels, dms, guilds, messages};
+use pulsar_db::repo::{attachments, channel_keys, channels, dms, guilds};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::info;
 use pulsar_common::permissions::Permissions;
 use crate::handlers::perms;
+use crate::handlers::uploads::get_channel_dek;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateChannel {
@@ -165,12 +166,24 @@ pub async fn list_messages(
         return Err(AppError::Forbidden);
     }
 
-    let limit = params.limit.unwrap_or(50).min(100);
+    let limit = params.limit.unwrap_or(50).min(100) as i32;
     let before = params.before.and_then(|b| b.parse::<i64>().ok());
 
-    let rows = messages::find_by_channel(&state.db, channel_id, limit, before).await?;
+    // Fetch the channel DEK (Redis cache -> PostgreSQL)
+    let dek = get_channel_dek(&state, channel_id).await?;
 
-    let message_ids: Vec<i64> = rows.iter().map(|m| m.id).collect();
+    // Read encrypted messages from ScyllaDB
+    let scylla_rows = pulsar_scylla::messages::find_by_channel(
+        &state.scylla,
+        channel_id,
+        limit,
+        before,
+    )
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("ScyllaDB read failed: {}", e)))?;
+
+    // Fetch attachments from PostgreSQL
+    let message_ids: Vec<i64> = scylla_rows.iter().map(|m| m.message_id).collect();
     let all_attachments = attachments::find_by_messages(&state.db, &message_ids).await?;
 
     let mut att_map: HashMap<i64, Vec<_>> = HashMap::new();
@@ -178,17 +191,23 @@ pub async fn list_messages(
         att_map.entry(att.message_id).or_default().push(att);
     }
 
-    let mut response: Vec<MessageResponse> = Vec::with_capacity(rows.len());
-    for m in rows {
-        let atts = att_map.remove(&m.id).unwrap_or_default();
-        let mut attachments = Vec::with_capacity(atts.len());
+    // Decrypt content and build responses
+    let mut response: Vec<MessageResponse> = Vec::with_capacity(scylla_rows.len());
+    for row in scylla_rows {
+        let content = state
+            .crypto
+            .decrypt_message(&dek, &row.content)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Decrypt failed: {}", e)))?;
+
+        let atts = att_map.remove(&row.message_id).unwrap_or_default();
+        let mut attachment_payloads = Vec::with_capacity(atts.len());
         for a in atts {
             let url = state
                 .storage
                 .generate_presigned_url(&a.storage_key, 900)
                 .await
                 .unwrap_or_default();
-            attachments.push(AttachmentPayload {
+            attachment_payloads.push(AttachmentPayload {
                 filename: a.filename,
                 content_type: a.content_type,
                 size: a.size,
@@ -196,14 +215,15 @@ pub async fn list_messages(
                 url,
             });
         }
+
         response.push(MessageResponse {
-            id: m.id.to_string(),
-            channel_id: m.channel_id.to_string(),
-            author_id: m.author_id.to_string(),
-            content: m.content,
-            attachments,
-            timestamp: m.created_at.timestamp_millis(),
-            edited_timestamp: m.edited_at.map(|t| t.timestamp_millis()),
+            id: row.message_id.to_string(),
+            channel_id: row.channel_id.to_string(),
+            author_id: row.author_id.to_string(),
+            content,
+            attachments: attachment_payloads,
+            timestamp: row.message_id,
+            edited_timestamp: row.edited_at,
         });
     }
 

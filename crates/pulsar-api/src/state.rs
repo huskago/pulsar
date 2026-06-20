@@ -2,6 +2,7 @@ use deadpool_redis::Pool as RedisPool;
 use pulsar_auth::jwt::JwtManager;
 use pulsar_common::config::LiveKitConfig;
 use pulsar_crypto::CryptoManager;
+use pulsar_scylla::ScyllaClient;
 use pulsar_storage::StorageClient;
 use sqlx::PgPool;
 
@@ -13,4 +14,5 @@ pub struct AppState {
     pub storage: StorageClient,
     pub redis: RedisPool,
     pub crypto: CryptoManager,
+    pub scylla: ScyllaClient,
 }
