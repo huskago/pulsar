@@ -1,4 +1,3 @@
-use crate::connection::ConnectionManager;
 use crate::state::GatewayState;
 use axum::{
     extract::{
@@ -12,9 +11,7 @@ use pulsar_common::models::{
     event::{ClientEvent, ServerEvent},
     snowflake::Snowflake,
 };
-use pulsar_messaging::nats_client::NatsClient;
 use pulsar_messaging::subjects;
-use sqlx::PgPool;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
@@ -189,9 +186,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     });
 
-    let recv_nats = state.nats.clone();
-    let recv_connections = state.connections.clone();
-    let recv_db = state.db.clone();
+    let recv_state = state.clone();
     let recv_user_id = user_id.clone();
     let recv_task = tokio::spawn(async move {
         while let Some(Ok(message)) = receiver.next().await {
@@ -200,9 +195,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
                     handle_client_message(
                         &text,
                         &recv_user_id,
-                        &recv_nats,
-                        &recv_connections,
-                        &recv_db,
+                        &recv_state,
                     )
                     .await;
                 }
@@ -265,9 +258,7 @@ async fn wait_for_identity(
 async fn handle_client_message(
     text: &str,
     user_id: &str,
-    nats: &NatsClient,
-    connections: &ConnectionManager,
-    db: &PgPool,
+    state: &GatewayState,
 ) {
     let event: ClientEvent = match serde_json::from_str(text) {
         Ok(e) => e,
@@ -279,7 +270,7 @@ async fn handle_client_message(
 
     match event {
         ClientEvent::Heartbeat => {
-            connections
+            state.connections
                 .send_to_user(user_id, ServerEvent::HeartbeatAck)
                 .await;
         }
@@ -297,13 +288,13 @@ async fn handle_client_message(
                 Err(_) => return,
             };
 
-            let channel = match pulsar_db::repo::channels::find_by_id(db, ch_id).await {
+            let channel = match pulsar_db::repo::channels::find_by_id(&state.db, ch_id).await {
                 Ok(Some(ch)) => ch,
                 _ => return,
             };
 
             if channel.kind == "dm" {
-                match pulsar_db::repo::dms::is_participant(db, ch_id, u_id).await {
+                match pulsar_db::repo::dms::is_participant(&state.db, ch_id, u_id).await {
                     Ok(true) => {},
                     _ => {
                         warn!(user_id = %user_id, "Not a DM participant");
@@ -311,13 +302,13 @@ async fn handle_client_message(
                     }
                 }
             } else if let Some(gid) = channel.guild_id {
-                let guild = match pulsar_db::repo::guilds::find_by_id(db, gid).await {
+                let guild = match pulsar_db::repo::guilds::find_by_id(&state.db, gid).await {
                     Ok(Some(g)) => g,
                     _ => return,
                 };
 
                 if guild.owner_id != u_id {
-                    let perms_bits = match pulsar_db::repo::roles::get_member_permissions(db, gid, u_id).await {
+                    let perms_bits = match pulsar_db::repo::roles::get_member_permissions(&state.db, gid, u_id).await {
                         Ok(p) => p,
                         Err(_) => return,
                     };
@@ -331,46 +322,81 @@ async fn handle_client_message(
                 return;
             }
 
+            // Retrieve the channel DEK
+            let dek = match crate::crypto_helpers::get_channel_dek(state, ch_id).await {
+                Ok(d) => d,
+                Err(e) => {
+                    error!("Cannot get DEK for channel {}: {}", ch_id, e);
+                    return;
+                }
+            };
+
+            // Encrypt the message content before storing
+            let encrypted_content = match state.crypto.encrypt_message(&dek, &content) {
+                Ok(ct) => ct,
+                Err(e) => {
+                    error!("Encryption failed: {}", e);
+                    return;
+                }
+            };
+
             let msg_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
-            if let Err(e) =
-                pulsar_db::repo::messages::insert(db, msg_id, ch_id, u_id, &content).await
-            {
-                error!("Failed to persist message: {}", e);
+            // Persist encrypted content to ScyllaDB (replaces pulsar_db::repo::messages::insert)
+            let scylla_msg = pulsar_scylla::messages::ScyllaMessage {
+                channel_id: ch_id,
+                message_id: msg_id,
+                author_id: u_id,
+                content: encrypted_content,
+                edited_at: None,
+            };
+            if let Err(e) = pulsar_scylla::messages::insert(&state.scylla, &scylla_msg).await {
+                error!("Failed to persist message to ScyllaDB: {}", e);
                 return;
             }
 
+            // Build attachment list with presigned URLs
             let mut attachment_payloads = Vec::new();
             for att in &attachments {
-                let att_id = pulsar_common::models::snowflake::Snowflake::generate().0;
+                let url = if !att.key.is_empty() {
+                    state.storage.generate_presigned_url(&att.key, 900)
+                        .await
+                        .unwrap_or_default()
+                } else {
+                    att.url.clone()
+                };
 
-                match pulsar_db::repo::attachments::insert(
-                    db,
+                let att_id = pulsar_common::models::snowflake::Snowflake::generate().0;
+                if let Err(e) = pulsar_db::repo::attachments::insert(
+                    &state.db,
                     att_id,
                     msg_id,
                     &att.filename,
                     &att.content_type,
                     att.size,
-                    &att.url,
-                    &att.url,
-                )
-                    .await
-                {
-                    Ok(_) => {
-                        info!(att_id = %att_id, msg_id = %msg_id, "Attachment saved to DB");
-                        attachment_payloads.push(att.clone());
-                    }
-                    Err(e) => {
-                        error!(att_id = %att_id, msg_id = %msg_id, error = %e, "Failed to insert attachment, skipping from payload");
-                    }
+                    &att.key,
+                    &url,
+                ).await {
+                    error!(att_id = %att_id, msg_id = %msg_id, error = %e, "Failed to insert attachment, skipping from payload");
+                    continue;
                 }
+
+                info!(att_id = %att_id, msg_id = %msg_id, "Attachment saved to DB");
+                attachment_payloads.push(pulsar_common::models::message::AttachmentPayload {
+                    filename: att.filename.clone(),
+                    content_type: att.content_type.clone(),
+                    size: att.size,
+                    key: att.key.clone(),
+                    url,
+                });
             }
 
+            // Broadcast plaintext content to connected clients via NATS
             let message = pulsar_common::models::message::Message {
                 id: Snowflake(msg_id),
                 channel_id: Snowflake(ch_id),
                 author_id: Snowflake(u_id),
-                content,
+                content,  // plaintext — encryption is at-rest in ScyllaDB only
                 attachments: attachment_payloads,
                 timestamp: chrono::Utc::now().timestamp_millis(),
                 edited_timestamp: None,
@@ -388,7 +414,7 @@ async fn handle_client_message(
                 subjects::chat_channel("default", &channel_id)
             };
 
-            if let Err(e) = nats.publish_persistent(&subject, &payload).await {
+            if let Err(e) = state.nats.publish_persistent(&subject, &payload).await {
                 error!("Failed to publish to NATS: {}", e);
             }
         }
@@ -403,7 +429,7 @@ async fn handle_client_message(
             };
 
             let subject = subjects::typing_channel("default", &channel_id);
-            let _ = nats.publish(&subject, &payload).await;
+            let _ = state.nats.publish(&subject, &payload).await;
         }
         ClientEvent::Identify { .. } => {
             warn!("Received Identify after already authenticated");

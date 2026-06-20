@@ -2,11 +2,14 @@ use axum::{routing::get, Router};
 use pulsar_auth::jwt::JwtManager;
 use pulsar_db::pool::{self, DatabaseConfig};
 use pulsar_messaging::nats_client::{NatsClient, NatsConfig};
+use pulsar_scylla::ScyllaClient;
+use pulsar_storage::{StorageClient, StorageConfig};
 use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod connection;
+mod crypto_helpers;
 mod handler;
 mod redis_client;
 mod state;
@@ -44,6 +47,16 @@ async fn main() {
     let redis = redis_client::create_pool(&redis_url)
         .expect("Failed to create Redis pool");
 
+    let scylla_url = std::env::var("SCYLLA_URL")
+        .unwrap_or_else(|_| "localhost:9042".to_string());
+    let scylla = ScyllaClient::connect(&scylla_url)
+        .await
+        .expect("Failed to connect to ScyllaDB");
+
+    let storage = StorageClient::new(StorageConfig::from_env())
+        .await
+        .expect("Failed to connect to MinIO");
+
     let state = GatewayState {
         connections: ConnectionManager::new(),
         jwt,
@@ -51,6 +64,8 @@ async fn main() {
         db,
         redis,
         crypto,
+        scylla,
+        storage,
     };
 
     let app = Router::new()

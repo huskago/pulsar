@@ -9,6 +9,8 @@ pulsar-messaging = { path = "../pulsar-messaging" }
 pulsar-auth = { path = "../pulsar-auth" }
 pulsar-db = { path = "../pulsar-db" }
 pulsar-crypto = { workspace = true }
+pulsar-scylla = { workspace = true }
+pulsar-storage = { path = "../pulsar-storage" }
 deadpool-redis = { workspace = true }
 redis = { workspace = true }
 anyhow.workspace = true
