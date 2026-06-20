@@ -53,6 +53,16 @@ pub async fn find_by_message(
     .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
 }
 
+pub async fn delete_by_message(pool: &PgPool, message_id: i64) -> Result<Vec<AttachmentRow>, AppError> {
+    sqlx::query_as::<_, AttachmentRow>(
+        "DELETE FROM attachments WHERE message_id = $1 RETURNING *",
+    )
+    .bind(message_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Delete attachments: {}", e)))
+}
+
 pub async fn find_by_messages(
     pool: &PgPool,
     message_ids: &[i64],

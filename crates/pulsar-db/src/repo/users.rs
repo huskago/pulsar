@@ -61,6 +61,38 @@ pub async fn find_by_id(pool: &PgPool, id: i64) -> Result<Option<UserRow>, AppEr
         .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
 }
 
+pub async fn find_by_ids(pool: &PgPool, ids: &[i64]) -> Result<Vec<UserRow>, AppError> {
+    sqlx::query_as::<_, UserRow>("SELECT * FROM users WHERE id = ANY($1)")
+        .bind(ids)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
+}
+
+pub async fn update_profile(
+    pool: &PgPool,
+    id: i64,
+    username: &str,
+    avatar_url: Option<&str>,
+    status: &str,
+) -> Result<UserRow, AppError> {
+    sqlx::query_as::<_, UserRow>(
+        "UPDATE users SET username = $2, avatar_url = $3, status = $4 WHERE id = $1 RETURNING *",
+    )
+    .bind(id)
+    .bind(username)
+    .bind(avatar_url)
+    .bind(status)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::Database(ref db_err) if db_err.is_unique_violation() => {
+            AppError::BadRequest("Username already taken".into())
+        }
+        _ => AppError::Internal(anyhow::anyhow!("Update profile: {}", e)),
+    })
+}
+
 pub async fn update_status(pool: &PgPool, id: i64, status: &str) -> Result<(), AppError> {
     sqlx::query("UPDATE users SET status = $1 WHERE id = $2")
         .bind(status)

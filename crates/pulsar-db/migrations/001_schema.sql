@@ -40,6 +40,7 @@ CREATE TABLE sessions (
 
 CREATE INDEX sessions_user_id_idx    ON sessions (user_id);
 CREATE INDEX sessions_token_hash_idx ON sessions (token_hash);
+CREATE INDEX idx_sessions_expires_at ON sessions (expires_at);
 
 CREATE TABLE relationships (
     user_id    BIGINT      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -91,10 +92,11 @@ CREATE TABLE channel_keys (
 );
 
 CREATE TABLE dm_channels (
-    channel_id BIGINT      NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-    user_id    BIGINT      NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
-    is_group   BOOLEAN     NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    channel_id      BIGINT      NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    user_id         BIGINT      NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+    is_group        BOOLEAN     NOT NULL DEFAULT FALSE,
+    last_message_at TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (channel_id, user_id)
 );
 

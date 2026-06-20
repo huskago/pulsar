@@ -51,3 +51,23 @@ pub async fn find_by_id(pool: &PgPool, id: i64) -> Result<Option<ChannelRow>, Ap
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
 }
+
+pub async fn update(pool: &PgPool, id: i64, name: &str) -> Result<ChannelRow, AppError> {
+    sqlx::query_as::<_, ChannelRow>(
+        "UPDATE channels SET name = $2 WHERE id = $1 RETURNING *",
+    )
+    .bind(id)
+    .bind(name)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Update channel: {}", e)))
+}
+
+pub async fn delete(pool: &PgPool, id: i64) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM channels WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Delete channel: {}", e)))?;
+    Ok(())
+}

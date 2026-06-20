@@ -89,6 +89,32 @@ pub async fn is_member(pool: &PgPool, guild_id: i64, user_id: i64) -> Result<boo
     Ok(row)
 }
 
+pub async fn update(
+    pool: &PgPool,
+    id: i64,
+    name: &str,
+    icon_url: Option<&str>,
+) -> Result<GuildRow, AppError> {
+    sqlx::query_as::<_, GuildRow>(
+        "UPDATE guilds SET name = $2, icon_url = $3 WHERE id = $1 RETURNING *",
+    )
+    .bind(id)
+    .bind(name)
+    .bind(icon_url)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Update guild: {}", e)))
+}
+
+pub async fn delete(pool: &PgPool, id: i64) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM guilds WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Delete guild: {}", e)))?;
+    Ok(())
+}
+
 pub async fn add_member(pool: &PgPool, guild_id: i64, user_id: i64) -> Result<(), AppError> {
     sqlx::query(
         "INSERT INTO guild_members (guild_id, user_id)

@@ -43,6 +43,56 @@ pub async fn find_by_channel(
     Ok(messages)
 }
 
+pub async fn find_one(
+    client: &ScyllaClient,
+    channel_id: i64,
+    message_id: i64,
+) -> anyhow::Result<Option<ScyllaMessage>> {
+    let result = client.session().query_unpaged(
+        "SELECT channel_id, message_id, author_id, content, edited_at FROM pulsar.messages WHERE channel_id = ? AND message_id = ? LIMIT 1",
+        (channel_id, message_id),
+    ).await?;
+
+    let rows_result = result.into_rows_result()?;
+    let mut rows = rows_result.rows::<(i64, i64, i64, Vec<u8>, Option<i64>)>()?;
+    match rows.next() {
+        Some(Ok((channel_id, message_id, author_id, content, edited_at))) =>
+            Ok(Some(ScyllaMessage { channel_id, message_id, author_id, content, edited_at })),
+        Some(Err(e)) => Err(e.into()),
+        None => Ok(None),
+    }
+}
+
+pub async fn update_content(
+    client: &ScyllaClient,
+    channel_id: i64,
+    message_id: i64,
+    content: Vec<u8>,
+    edited_at: i64,
+) -> anyhow::Result<()> {
+    client.session().query_unpaged(
+        "UPDATE pulsar.messages SET content = ?, edited_at = ? WHERE channel_id = ? AND message_id = ?",
+        (&content, edited_at, channel_id, message_id),
+    ).await?;
+    Ok(())
+}
+
+pub async fn delete_one(client: &ScyllaClient, channel_id: i64, message_id: i64) -> anyhow::Result<()> {
+    client.session().query_unpaged(
+        "DELETE FROM pulsar.messages WHERE channel_id = ? AND message_id = ?",
+        (channel_id, message_id),
+    ).await?;
+    Ok(())
+}
+
+pub async fn delete_by_channel(client: &ScyllaClient, channel_id: i64) -> anyhow::Result<()> {
+    client.session().query_unpaged(
+        "DELETE FROM pulsar.messages WHERE channel_id = ?",
+        (channel_id,),
+    ).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
