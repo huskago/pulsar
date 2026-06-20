@@ -113,6 +113,7 @@ async fn main() {
         .route("/voice/token", post(voice::get_voice_token))
         .route("/upload", post(uploads::upload_file)
             .layer(DefaultBodyLimit::max(26 * 1024 * 1024)))
+        .route("/attachments/{key}/url", get(uploads::get_attachment_url))
         .route("/guilds/{guild_id}/roles",
                get(roles::list_roles).post(roles::create_role))
         .route("/guilds/{guild_id}/roles/{role_id}",

@@ -173,29 +173,34 @@ pub async fn list_messages(
         att_map.entry(att.message_id).or_default().push(att);
     }
 
-    let response: Vec<MessageResponse> = rows
-        .into_iter()
-        .map(|m| {
-            let atts = att_map.remove(&m.id).unwrap_or_default();
-            MessageResponse {
-                id: m.id.to_string(),
-                channel_id: m.channel_id.to_string(),
-                author_id: m.author_id.to_string(),
-                content: m.content,
-                attachments: atts
-                    .into_iter()
-                    .map(|a| AttachmentPayload {
-                        filename: a.filename,
-                        content_type: a.content_type,
-                        size: a.size,
-                        url: a.url,
-                    })
-                    .collect(),
-                timestamp: m.created_at.timestamp_millis(),
-                edited_timestamp: m.edited_at.map(|t| t.timestamp_millis()),
-            }
-        })
-        .collect();
+    let mut response: Vec<MessageResponse> = Vec::with_capacity(rows.len());
+    for m in rows {
+        let atts = att_map.remove(&m.id).unwrap_or_default();
+        let mut attachments = Vec::with_capacity(atts.len());
+        for a in atts {
+            let url = state
+                .storage
+                .generate_presigned_url(&a.storage_key, 900)
+                .await
+                .unwrap_or_default();
+            attachments.push(AttachmentPayload {
+                filename: a.filename,
+                content_type: a.content_type,
+                size: a.size,
+                key: a.storage_key,
+                url,
+            });
+        }
+        response.push(MessageResponse {
+            id: m.id.to_string(),
+            channel_id: m.channel_id.to_string(),
+            author_id: m.author_id.to_string(),
+            content: m.content,
+            attachments,
+            timestamp: m.created_at.timestamp_millis(),
+            edited_timestamp: m.edited_at.map(|t| t.timestamp_millis()),
+        });
+    }
 
     Ok(Json(response))
 }

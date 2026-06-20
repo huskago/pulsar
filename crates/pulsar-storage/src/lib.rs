@@ -1,9 +1,11 @@
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{
     config::{BehaviorVersion, Region},
+    presigning::PresigningConfig,
     primitives::ByteStream,
     Client,
 };
+use std::time::Duration;
 use tracing::info;
 use uuid::Uuid;
 
@@ -17,7 +19,6 @@ pub struct StorageConfig {
     pub bucket: String,
     pub access_key: String,
     pub secret_key: String,
-    pub public_url: String,
 }
 
 impl Default for StorageConfig {
@@ -27,7 +28,6 @@ impl Default for StorageConfig {
             bucket: "pulsar-uploads".to_string(),
             access_key: "pulsar".to_string(),
             secret_key: "pulsarsecret".to_string(),
-            public_url: "http://localhost:9000/pulsar-uploads".to_string(),
         }
     }
 }
@@ -38,8 +38,6 @@ impl StorageConfig {
             .unwrap_or_else(|_| "http://localhost:9000".to_string());
         let bucket = std::env::var("STORAGE_BUCKET")
             .unwrap_or_else(|_| "pulsar-uploads".to_string());
-        let public_url = std::env::var("STORAGE_PUBLIC_URL")
-            .unwrap_or_else(|_| format!("{}/{}", endpoint, bucket));
         Self {
             endpoint,
             bucket,
@@ -47,7 +45,6 @@ impl StorageConfig {
                 .unwrap_or_else(|_| "pulsar".to_string()),
             secret_key: std::env::var("STORAGE_SECRET_KEY")
                 .unwrap_or_else(|_| "pulsarsecret".to_string()),
-            public_url,
         }
     }
 }
@@ -56,12 +53,10 @@ impl StorageConfig {
 pub struct StorageClient {
     client: Client,
     bucket: String,
-    public_url: String,
 }
 
 pub struct UploadResult {
     pub key: String,
-    pub url: String,
     pub size: u64,
 }
 
@@ -96,23 +91,10 @@ impl StorageClient {
             info!(bucket = %config.bucket, "Created storage bucket");
         }
 
-        let policy = format!(
-            r#"{{"Version":"2012-10-17","Statement":[{{"Effect":"Allow","Principal":{{"AWS":["*"]}},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::{}/*"]}}]}}"#,
-            config.bucket
-        );
-        client
-            .put_bucket_policy()
-            .bucket(&config.bucket)
-            .policy(policy)
-            .send()
-            .await?;
-        info!(bucket = %config.bucket, "Set public read policy on bucket");
+        let _ = client.delete_bucket_policy().bucket(&config.bucket).send().await;
+        info!(bucket = %config.bucket, "Bucket set to private (no public policy)");
 
-        Ok(Self {
-            client,
-            bucket: config.bucket,
-            public_url: config.public_url,
-        })
+        Ok(Self { client, bucket: config.bucket })
     }
 
     pub async fn upload(
@@ -123,14 +105,12 @@ impl StorageClient {
         data: Vec<u8>,
     ) -> anyhow::Result<UploadResult> {
         let size = data.len() as u64;
-
         let ext = filename.rsplit('.').next().unwrap_or("bin");
         let key = format!("{}/{}.{}", channel_id, Uuid::new_v4(), ext);
 
         let mut hasher = Md5::new();
         Digest::update(&mut hasher, &data);
-        let md5_bytes = hasher.finalize();
-        let content_md5 = STANDARD.encode(md5_bytes);
+        let content_md5 = STANDARD.encode(hasher.finalize());
 
         self.client
             .put_object()
@@ -142,11 +122,21 @@ impl StorageClient {
             .send()
             .await?;
 
-        let url = format!("{}/{}", self.public_url, key);
+        info!(key = %key, size = %size, "File uploaded (encrypted)");
+        Ok(UploadResult { key, size })
+    }
 
-        info!(key = %key, size = %size, content_type = %content_type, "File uploaded");
-
-        Ok(UploadResult { key, url, size })
+    pub async fn generate_presigned_url(&self, key: &str, expiry_secs: u64) -> anyhow::Result<String> {
+        let config = PresigningConfig::expires_in(Duration::from_secs(expiry_secs))
+            .map_err(|e| anyhow::anyhow!("Presigning config error: {}", e))?;
+        let presigned = self.client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .presigned(config)
+            .await
+            .map_err(|e| anyhow::anyhow!("Presign failed for key {}: {}", key, e))?;
+        Ok(presigned.uri().to_string())
     }
 
     pub async fn delete(&self, key: &str) -> anyhow::Result<()> {
@@ -156,7 +146,6 @@ impl StorageClient {
             .key(key)
             .send()
             .await?;
-
         Ok(())
     }
 }

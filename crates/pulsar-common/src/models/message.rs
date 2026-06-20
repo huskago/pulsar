@@ -18,5 +18,10 @@ pub struct AttachmentPayload {
     pub filename: String,
     pub content_type: String,
     pub size: i64,
+    /// MinIO storage key (e.g. "channel_id/uuid.jpg"), used server-side
+    #[serde(default)]
+    pub key: String,
+    /// Presigned URL (15 min), generated on-demand server-side, empty from client
+    #[serde(default)]
     pub url: String,
 }
