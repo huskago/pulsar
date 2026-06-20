@@ -3,7 +3,7 @@ use axum::{
     Json,
 };
 use pulsar_common::error::AppError;
-use pulsar_db::repo::{dms, users};
+use pulsar_db::repo::{channel_keys, dms, users};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use super::privacy as privacy_check;
@@ -75,6 +75,12 @@ pub async fn open_dm(
             let new_id = pulsar_common::models::snowflake::Snowflake::generate().0;
             dms::create(&state.db, new_id, user_id, target_id).await?;
             info!(channel_id = %new_id, user_a = %user_id, user_b = %target_id, "DM created");
+
+            let dek = state.crypto.generate_dek();
+            let sealed = state.crypto.seal_dek(&dek)
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("DEK seal failed: {}", e)))?;
+            channel_keys::upsert(&state.db, new_id, &sealed).await?;
+
             new_id
         }
     };
@@ -188,6 +194,11 @@ pub async fn create_group_dm(
         .execute(&state.db)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Create group info: {}", e)))?;
+
+    let dek = state.crypto.generate_dek();
+    let sealed = state.crypto.seal_dek(&dek)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("DEK seal failed: {}", e)))?;
+    channel_keys::upsert(&state.db, channel_id, &sealed).await?;
 
     info!(channel_id = %channel_id, participants = %participant_ids.len(), "Group DM created");
 

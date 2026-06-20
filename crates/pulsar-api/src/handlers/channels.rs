@@ -5,7 +5,7 @@ use axum::{
 };
 use pulsar_common::error::AppError;
 use pulsar_common::models::message::AttachmentPayload;
-use pulsar_db::repo::{attachments, channels, dms, guilds, messages};
+use pulsar_db::repo::{attachments, channel_keys, channels, dms, guilds, messages};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::info;
@@ -83,6 +83,11 @@ pub async fn create_channel(
         position,
     )
     .await?;
+
+    let dek = state.crypto.generate_dek();
+    let sealed = state.crypto.seal_dek(&dek)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("DEK seal failed: {}", e)))?;
+    channel_keys::upsert(&state.db, channel_id, &sealed).await?;
 
     info!(channel_id = %row.id, guild_id = %guild_id, "Channel created");
 
