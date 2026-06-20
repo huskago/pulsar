@@ -40,6 +40,34 @@ services:
     volumes:
       - minio_data:/data
 
+  scylladb:
+    image: scylladb/scylla
+    container_name: pulsar-scylla
+    restart: unless-stopped
+    command: "--smp 1 --memory 512M --developer-mode 1"
+    ports:
+      - "9042:9042"
+    volumes:
+      - scylla_data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  redis:
+    image: redis:8-alpine
+    container_name: pulsar-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   livekit:
     image: livekit/livekit-server:latest
     container_name: pulsar-livekit
@@ -67,6 +95,8 @@ services:
       DATABASE_URL: postgres://pulsar:pulsar@db:5432/pulsar
       NATS_URL: nats://nats:4222
       STORAGE_ENDPOINT: http://minio:9000
+      SCYLLA_URL: scylladb:9042
+      REDIS_URL: redis://redis:6379
       # LIVEKIT_URL and STORAGE_PUBLIC_URL come from .env (must be public VPS IP/domain)
     ports:
       - "3000:3000"
@@ -79,6 +109,10 @@ services:
         condition: service_started
       livekit:
         condition: service_started
+      scylladb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   gateway:
     build:
@@ -94,6 +128,8 @@ services:
       PORT: 3001
       DATABASE_URL: postgres://pulsar:pulsar@db:5432/pulsar
       NATS_URL: nats://nats:4222
+      SCYLLA_URL: scylladb:9042
+      REDIS_URL: redis://redis:6379
     ports:
       - "3001:3001"
     depends_on:
@@ -101,6 +137,10 @@ services:
         condition: service_healthy
       nats:
         condition: service_started
+      scylladb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   web:
     build:
@@ -121,3 +161,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  scylla_data:
