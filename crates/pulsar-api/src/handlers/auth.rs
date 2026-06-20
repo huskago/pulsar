@@ -99,7 +99,7 @@ pub async fn register(
         email: row.email,
         password_hash: row.password_hash,
         avatar_url: row.avatar_url,
-        status: UserStatus::default(),
+        status: UserStatus::from_db(&row.status),
     };
 
     info!(user_id = %user.id, "New user registered");
@@ -149,7 +149,7 @@ pub async fn login(
         email: row.email,
         password_hash: row.password_hash,
         avatar_url: row.avatar_url,
-        status: UserStatus::default(),
+        status: UserStatus::from_db(&row.status),
     };
 
     info!(user_id = %user.id, "User logged in");

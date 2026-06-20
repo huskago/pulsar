@@ -19,7 +19,19 @@ pub enum UserStatus {
     Offline,
     Online,
     Idle,
+    #[serde(rename = "dnd")]
     DoNotDisturb,
+}
+
+impl UserStatus {
+    pub fn from_db(s: &str) -> Self {
+        match s {
+            "online" => Self::Online,
+            "idle" => Self::Idle,
+            "dnd" => Self::DoNotDisturb,
+            _ => Self::Offline,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

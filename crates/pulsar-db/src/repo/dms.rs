@@ -27,6 +27,7 @@ pub async fn find_between(
         "SELECT d1.channel_id FROM dm_channels d1
          INNER JOIN dm_channels d2 ON d1.channel_id = d2.channel_id
          WHERE d1.user_id = $1 AND d2.user_id = $2
+           AND d1.is_group = FALSE AND d2.is_group = FALSE
          LIMIT 1"
     )
         .bind(user_a)
@@ -80,7 +81,7 @@ pub async fn list_conversations(
          FROM dm_channels d1
          INNER JOIN dm_channels d2 ON d1.channel_id = d2.channel_id AND d2.user_id != d1.user_id
          INNER JOIN users u ON u.id = d2.user_id
-         WHERE d1.user_id = $1
+         WHERE d1.user_id = $1 AND d1.is_group = FALSE
          ORDER BY d1.last_message_at DESC NULLS LAST"
     )
         .bind(user_id)

@@ -62,7 +62,7 @@ pub async fn update_me(
         email: row.email,
         password_hash: row.password_hash,
         avatar_url: row.avatar_url,
-        status: UserStatus::default(),
+        status: UserStatus::from_db(&row.status),
     }))
 }
 
@@ -83,7 +83,7 @@ pub async fn get_me(auth: AuthUser, State(state): State<AppState>) -> Result<Jso
         email: row.email,
         password_hash: row.password_hash,
         avatar_url: row.avatar_url,
-        status: UserStatus::default(),
+        status: UserStatus::from_db(&row.status),
     }))
 }
 
@@ -120,12 +120,12 @@ pub async fn update_settings(
 
     let dm_priv = payload
         .dm_privacy
-        .map(|s| DmPrivacy::from_str(&s).as_str().to_string())
+        .map(|s| DmPrivacy::from_db(&s).as_str().to_string())
         .unwrap_or(current.dm_privacy);
 
     let fr_priv = payload
         .friend_request_privacy
-        .map(|s| FriendRequestPrivacy::from_str(&s).as_str().to_string())
+        .map(|s| FriendRequestPrivacy::from_db(&s).as_str().to_string())
         .unwrap_or(current.friend_request_privacy);
 
     let updated = users::update_settings(&state.db, user_id, &dm_priv, &fr_priv).await?;

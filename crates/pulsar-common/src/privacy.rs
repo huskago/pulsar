@@ -1,19 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum DmPrivacy {
     Everyone,
     FriendsAndGuilds,
     FriendsOfFriends,
+    #[default]
     FriendsOnly,
     Nobody,
-}
-
-impl Default for DmPrivacy {
-    fn default() -> Self {
-        Self::FriendsOnly
-    }
 }
 
 impl DmPrivacy {
@@ -27,7 +22,7 @@ impl DmPrivacy {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_db(s: &str) -> Self {
         match s {
             "everyone" => Self::Everyone,
             "friends_and_guilds" => Self::FriendsAndGuilds,
@@ -39,19 +34,14 @@ impl DmPrivacy {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum FriendRequestPrivacy {
+    #[default]
     Everyone,
     FriendsOfFriends,
     GuildsOnly,
     Nobody,
-}
-
-impl Default for FriendRequestPrivacy {
-    fn default() -> Self {
-        Self::Everyone
-    }
 }
 
 impl FriendRequestPrivacy {
@@ -64,7 +54,7 @@ impl FriendRequestPrivacy {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_db(s: &str) -> Self {
         match s {
             "everyone" => Self::Everyone,
             "friends_of_friends" => Self::FriendsOfFriends,

@@ -73,15 +73,22 @@ pub async fn open_dm(
         Some(id) => id,
         None => {
             let new_id = pulsar_common::models::snowflake::Snowflake::generate().0;
-            dms::create(&state.db, new_id, user_id, target_id).await?;
-            info!(channel_id = %new_id, user_a = %user_id, user_b = %target_id, "DM created");
-
-            let dek = state.crypto.generate_dek();
-            let sealed = state.crypto.seal_dek(&dek)
-                .map_err(|e| AppError::Internal(anyhow::anyhow!("DEK seal failed: {}", e)))?;
-            channel_keys::upsert(&state.db, new_id, &sealed).await?;
-
-            new_id
+            match dms::create(&state.db, new_id, user_id, target_id).await {
+                Ok(_) => {
+                    info!(channel_id = %new_id, user_a = %user_id, user_b = %target_id, "DM created");
+                    let dek = state.crypto.generate_dek();
+                    let sealed = state.crypto.seal_dek(&dek)
+                        .map_err(|e| AppError::Internal(anyhow::anyhow!("DEK seal failed: {}", e)))?;
+                    channel_keys::upsert(&state.db, new_id, &sealed).await?;
+                    new_id
+                }
+                Err(_) => {
+                    // Race condition: another request created the DM concurrently
+                    dms::find_between(&state.db, user_id, target_id)
+                        .await?
+                        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("DM channel lost after concurrent create")))?
+                }
+            }
         }
     };
 
@@ -162,13 +169,21 @@ pub async fn create_group_dm(
 
     let channel_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
+    let dek = state.crypto.generate_dek();
+    let sealed = state.crypto.seal_dek(&dek)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("DEK seal failed: {}", e)))?;
+
+    let mut tx = state.db.begin()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("TX begin: {}", e)))?;
+
     sqlx::query(
         "INSERT INTO channels (id, guild_id, name, kind, position)
          VALUES ($1, NULL, $2, 'dm', 0)"
     )
         .bind(channel_id)
         .bind(payload.name.as_deref().unwrap_or("Group DM"))
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Create group channel: {}", e)))?;
 
@@ -179,7 +194,7 @@ pub async fn create_group_dm(
         )
             .bind(channel_id)
             .bind(pid)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("Add participant: {}", e)))?;
     }
@@ -191,14 +206,24 @@ pub async fn create_group_dm(
         .bind(channel_id)
         .bind(payload.name.as_deref())
         .bind(user_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Create group info: {}", e)))?;
 
-    let dek = state.crypto.generate_dek();
-    let sealed = state.crypto.seal_dek(&dek)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("DEK seal failed: {}", e)))?;
-    channel_keys::upsert(&state.db, channel_id, &sealed).await?;
+    sqlx::query(
+        "INSERT INTO channel_keys (channel_id, sealed_dek)
+         VALUES ($1, $2)
+         ON CONFLICT (channel_id) DO UPDATE SET sealed_dek = EXCLUDED.sealed_dek"
+    )
+        .bind(channel_id)
+        .bind(&sealed)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("channel_keys upsert: {}", e)))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("TX commit: {}", e)))?;
 
     info!(channel_id = %channel_id, participants = %participant_ids.len(), "Group DM created");
 

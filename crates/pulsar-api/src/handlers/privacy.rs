@@ -12,7 +12,7 @@ pub async fn can_dm(
     }
 
     let settings = users::get_settings(db, target_id).await?;
-    let privacy = DmPrivacy::from_str(&settings.dm_privacy);
+    let privacy = DmPrivacy::from_db(&settings.dm_privacy);
 
     match privacy {
         DmPrivacy::Everyone => Ok(true),
@@ -43,7 +43,7 @@ pub async fn can_send_friend_request(
     }
 
     let settings = users::get_settings(db, target_id).await?;
-    let privacy = FriendRequestPrivacy::from_str(&settings.friend_request_privacy);
+    let privacy = FriendRequestPrivacy::from_db(&settings.friend_request_privacy);
 
     match privacy {
         FriendRequestPrivacy::Everyone => Ok(true),
