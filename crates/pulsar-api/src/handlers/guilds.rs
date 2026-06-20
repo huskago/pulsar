@@ -1,7 +1,7 @@
 use axum::{extract::State, Json};
 use pulsar_common::error::AppError;
 use pulsar_common::permissions::Permissions;
-use pulsar_db::repo::{channels as channels_repo, guilds, roles};
+use pulsar_db::repo::{channel_keys, channels as channels_repo, guilds, roles};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -45,6 +45,11 @@ pub async fn create_guild(
 
     let channel_id = pulsar_common::models::snowflake::Snowflake::generate().0;
     channels_repo::insert(&state.db, channel_id, guild_id, "general", "text", 0).await?;
+
+    let dek = state.crypto.generate_dek();
+    let sealed = state.crypto.seal_dek(&dek)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("DEK seal failed: {}", e)))?;
+    channel_keys::upsert(&state.db, channel_id, &sealed).await?;
 
     info!(guild_id = %guild.id, "Guild created with @everyone role");
 

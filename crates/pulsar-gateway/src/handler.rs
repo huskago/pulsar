@@ -405,8 +405,10 @@ async fn handle_client_message(
 
             let subject = if channel.kind == "dm" {
                 format!("dm.{}", channel_id)
+            } else if let Some(gid) = channel.guild_id {
+                subjects::chat_channel(&gid.to_string(), &channel_id)
             } else {
-                subjects::chat_channel("default", &channel_id)
+                return;
             };
 
             if let Err(e) = state.nats.publish_persistent(&subject, &payload).await {
@@ -414,6 +416,16 @@ async fn handle_client_message(
             }
         }
         ClientEvent::StartTyping { channel_id } => {
+            let ch_id: i64 = match channel_id.parse() {
+                Ok(id) => id,
+                Err(_) => return,
+            };
+
+            let channel = match pulsar_db::repo::channels::find_by_id(&state.db, ch_id).await {
+                Ok(Some(ch)) => ch,
+                _ => return,
+            };
+
             let event = ServerEvent::TypingStart {
                 channel_id: channel_id.clone(),
                 user_id: user_id.to_string(),
@@ -423,7 +435,13 @@ async fn handle_client_message(
                 Err(e) => { error!("Failed to serialize TypingStart: {}", e); return; }
             };
 
-            let subject = subjects::typing_channel("default", &channel_id);
+            let subject = if channel.kind == "dm" {
+                format!("dm.{}", channel_id)
+            } else if let Some(gid) = channel.guild_id {
+                subjects::typing_channel(&gid.to_string(), &channel_id)
+            } else {
+                return;
+            };
             let _ = state.nats.publish(&subject, &payload).await;
         }
         ClientEvent::Identify { .. } => {
