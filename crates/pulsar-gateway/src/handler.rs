@@ -77,7 +77,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
         }
     };
 
-    let nats_dm_sub = match state.nats.subscribe(&"dm.>".to_string()).await {
+    let nats_dm_sub = match state.nats.subscribe("dm.>").await {
         Ok(sub) => sub,
         Err(e) => {
             error!("Failed to subscribe to DM NATS: {}", e);
@@ -99,9 +99,10 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
                 Some(id) => id,
                 None => continue,
             };
-            let is_member = pulsar_db::repo::guilds::is_member(&chat_db, guild_id, chat_uid)
-                .await
-                .unwrap_or(false);
+            let is_member = match pulsar_db::repo::guilds::is_member(&chat_db, guild_id, chat_uid).await {
+                Ok(v) => v,
+                Err(e) => { error!("DB error checking guild membership: {}", e); continue; }
+            };
             if !is_member {
                 continue;
             }
@@ -126,9 +127,10 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
                 Some(id) => id,
                 None => continue,
             };
-            let is_member = pulsar_db::repo::guilds::is_member(&typing_db, guild_id, typing_uid)
-                .await
-                .unwrap_or(false);
+            let is_member = match pulsar_db::repo::guilds::is_member(&typing_db, guild_id, typing_uid).await {
+                Ok(v) => v,
+                Err(e) => { error!("DB error checking guild membership: {}", e); continue; }
+            };
             if !is_member {
                 continue;
             }
@@ -154,9 +156,14 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
                 None => continue,
             };
 
-            let is_participant = pulsar_db::repo::dms::is_participant(
-                &dm_db, dm_channel_id, dm_user_id.parse().unwrap_or(0)
-            ).await.unwrap_or(false);
+            let uid: i64 = match dm_user_id.parse() {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let is_participant = match pulsar_db::repo::dms::is_participant(&dm_db, dm_channel_id, uid).await {
+                Ok(v) => v,
+                Err(e) => { error!("DB error checking DM participation: {}", e); continue; }
+            };
 
             if !is_participant {
                 continue;
@@ -365,13 +372,15 @@ async fn handle_client_message(
                 let att_id = pulsar_common::models::snowflake::Snowflake::generate().0;
                 if let Err(e) = pulsar_db::repo::attachments::insert(
                     &state.db,
-                    att_id,
-                    msg_id,
-                    &att.filename,
-                    &att.content_type,
-                    att.size,
-                    &att.key,
-                    &url,
+                    pulsar_db::repo::attachments::NewAttachment {
+                        id: att_id,
+                        message_id: msg_id,
+                        filename: &att.filename,
+                        content_type: &att.content_type,
+                        size: att.size,
+                        storage_key: &att.key,
+                        url: &url,
+                    },
                 ).await {
                     error!(att_id = %att_id, msg_id = %msg_id, error = %e, "Failed to insert attachment, skipping from payload");
                     continue;
@@ -403,19 +412,19 @@ async fn handle_client_message(
                 Err(e) => { error!("Failed to serialize MessageCreate: {}", e); return; }
             };
 
-            let subject = if channel.kind == "dm" {
+            if channel.kind == "dm" {
                 if let Err(e) = pulsar_db::repo::dms::update_last_message_at(&state.db, ch_id).await {
                     error!("Failed to update last_message_at for DM {}: {}", ch_id, e);
                 }
-                format!("dm.{}", channel_id)
+                let subject = format!("dm.{}", channel_id);
+                if let Err(e) = state.nats.publish(&subject, &payload).await {
+                    error!("Failed to publish DM message to NATS: {}", e);
+                }
             } else if let Some(gid) = channel.guild_id {
-                subjects::chat_channel(&gid.to_string(), &channel_id)
-            } else {
-                return;
-            };
-
-            if let Err(e) = state.nats.publish_persistent(&subject, &payload).await {
-                error!("Failed to publish to NATS: {}", e);
+                let subject = subjects::chat_channel(&gid.to_string(), &channel_id);
+                if let Err(e) = state.nats.publish_persistent(&subject, &payload).await {
+                    error!("Failed to publish to NATS: {}", e);
+                }
             }
         }
         ClientEvent::StartTyping { channel_id } => {

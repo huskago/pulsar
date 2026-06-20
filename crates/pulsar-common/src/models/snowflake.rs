@@ -11,7 +11,7 @@ impl Snowflake {
     pub fn generate() -> Self {
         let now = chrono::Utc::now().timestamp_millis();
         let prev = LAST_ID
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |last| {
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |last| {
                 Some(last.max(now - 1) + 1)
             })
             .unwrap_or(now - 1);

@@ -89,7 +89,7 @@ pub async fn get_voice_token(
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("System clock error")))?
         .as_secs();
 
     let claims = LiveKitClaims {

@@ -28,11 +28,10 @@ impl FromRequestParts<AppState> for AuthUser {
 
         let claims = state.jwt.validate_token(token)?;
 
-        if crate::redis_client::is_jwt_blocked(&state.redis, &claims.jti)
-            .await
-            .unwrap_or(false)
-        {
-            return Err(AppError::Unauthorized);
+        match crate::redis_client::is_jwt_blocked(&state.redis, &claims.jti).await {
+            Ok(true) => return Err(AppError::Unauthorized),
+            Ok(false) => {}
+            Err(e) => tracing::warn!("Redis blocklist check failed, allowing request: {}", e),
         }
 
         Ok(AuthUser { claims })

@@ -59,7 +59,7 @@ pub async fn create_channel(
     }
     perms::check_permission(&state.db, guild_id, user_id, Permissions::MANAGE_CHANNELS).await?;
 
-    if payload.name.len() < 1 || payload.name.len() > 100 {
+    if payload.name.is_empty() || payload.name.len() > 100 {
         return Err(AppError::BadRequest(
             "Channel name must be between 1 and 100 characters".into(),
         ));
@@ -94,7 +94,7 @@ pub async fn create_channel(
 
     Ok(Json(ChannelResponse {
         id: row.id.to_string(),
-        guild_id: row.guild_id.unwrap().to_string(),
+        guild_id: row.guild_id.ok_or(AppError::Internal(anyhow::anyhow!("Channel missing guild_id")))?.to_string(),
         name: row.name,
         kind: row.kind,
         position: row.position,
@@ -123,12 +123,14 @@ pub async fn list_channels(
 
     let response: Vec<ChannelResponse> = rows
         .into_iter()
-        .map(|c| ChannelResponse {
-            id: c.id.to_string(),
-            guild_id: c.guild_id.unwrap().to_string(),
-            name: c.name,
-            kind: c.kind,
-            position: c.position,
+        .filter_map(|c| {
+            Some(ChannelResponse {
+                id: c.id.to_string(),
+                guild_id: c.guild_id?.to_string(),
+                name: c.name,
+                kind: c.kind,
+                position: c.position,
+            })
         })
         .collect();
 
@@ -265,7 +267,7 @@ pub async fn update_channel(
 
     Ok(Json(ChannelResponse {
         id: updated.id.to_string(),
-        guild_id: updated.guild_id.unwrap().to_string(),
+        guild_id: updated.guild_id.ok_or(AppError::Internal(anyhow::anyhow!("Channel missing guild_id")))?.to_string(),
         name: updated.name,
         kind: updated.kind,
         position: updated.position,

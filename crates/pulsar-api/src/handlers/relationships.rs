@@ -75,13 +75,12 @@ pub async fn create_relationship(
                 return Err(AppError::NotFound("User not found".into()));
             }
 
-            if let Some(existing) = relationships::get_relationship(&state.db, user_id, target_id).await? {
-                if existing.kind == "pending_incoming" {
+            if let Some(existing) = relationships::get_relationship(&state.db, user_id, target_id).await?
+                && existing.kind == "pending_incoming" {
                     relationships::accept_friend_request(&state.db, user_id, target_id).await?;
                     info!(user = %user_id, target = %target_id, "Friend request auto-accepted (mutual)");
                     return Ok(Json(serde_json::json!({ "status": "friends" })));
                 }
-            }
 
             relationships::send_friend_request(&state.db, user_id, target_id).await?;
             info!(user = %user_id, target = %target_id, "Friend request sent");

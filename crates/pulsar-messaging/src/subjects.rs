@@ -1,9 +1,9 @@
-/// Subject hierarchy:
-///   chat.{guild_id}.{channel_id}    channel messages
-///   typing.{guild_id}.{channel_id}  typing indicators
-///   presence.{guild_id}             presence updates
-///
-/// Wildcards: `*` matches one segment, `>` matches the rest of the subject.
+//! Subject hierarchy:
+//!   chat.{guild_id}.{channel_id}    channel messages
+//!   typing.{guild_id}.{channel_id}  typing indicators
+//!   presence.{guild_id}             presence updates
+//!
+//! Wildcards: `*` matches one segment, `>` matches the rest of the subject.
 
 pub fn chat_channel(guild_id: &str, channel_id: &str) -> String {
     format!("chat.{}.{}", guild_id, channel_id)

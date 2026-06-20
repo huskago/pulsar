@@ -13,28 +13,29 @@ pub struct AttachmentRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-pub async fn insert(
-    pool: &PgPool,
-    id: i64,
-    message_id: i64,
-    filename: &str,
-    content_type: &str,
-    size: i64,
-    storage_key: &str,
-    url: &str,
-) -> Result<AttachmentRow, AppError> {
+pub struct NewAttachment<'a> {
+    pub id: i64,
+    pub message_id: i64,
+    pub filename: &'a str,
+    pub content_type: &'a str,
+    pub size: i64,
+    pub storage_key: &'a str,
+    pub url: &'a str,
+}
+
+pub async fn insert(pool: &PgPool, att: NewAttachment<'_>) -> Result<AttachmentRow, AppError> {
     sqlx::query_as::<_, AttachmentRow>(
         "INSERT INTO attachments (id, message_id, filename, content_type, size, storage_key, url)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING *",
     )
-    .bind(id)
-    .bind(message_id)
-    .bind(filename)
-    .bind(content_type)
-    .bind(size)
-    .bind(storage_key)
-    .bind(url)
+    .bind(att.id)
+    .bind(att.message_id)
+    .bind(att.filename)
+    .bind(att.content_type)
+    .bind(att.size)
+    .bind(att.storage_key)
+    .bind(att.url)
     .fetch_one(pool)
     .await
     .map_err(|e| AppError::Internal(anyhow::anyhow!("Insert attachment: {}", e)))

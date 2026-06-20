@@ -129,17 +129,15 @@ pub async fn get_invite(
         .await?
         .ok_or(AppError::NotFound("Invite not found".into()))?;
 
-    if let Some(expires_at) = invite.expires_at {
-        if expires_at < chrono::Utc::now() {
+    if let Some(expires_at) = invite.expires_at
+        && expires_at < chrono::Utc::now() {
             return Err(AppError::BadRequest("Invite has expired".into()));
         }
-    }
 
-    if let Some(max) = invite.max_uses {
-        if invite.uses >= max {
+    if let Some(max) = invite.max_uses
+        && invite.uses >= max {
             return Err(AppError::BadRequest("Invite has reached max uses".into()));
         }
-    }
 
     let guild = guilds::find_by_id(&state.db, invite.guild_id)
         .await?
@@ -171,17 +169,15 @@ pub async fn join_invite(
         .await?
         .ok_or(AppError::NotFound("Invite not found or expired".into()))?;
 
-    if let Some(expires_at) = invite.expires_at {
-        if expires_at < chrono::Utc::now() {
+    if let Some(expires_at) = invite.expires_at
+        && expires_at < chrono::Utc::now() {
             return Err(AppError::BadRequest("Invite has expired".into()));
         }
-    }
 
-    if let Some(max) = invite.max_uses {
-        if invite.uses >= max {
+    if let Some(max) = invite.max_uses
+        && invite.uses >= max {
             return Err(AppError::BadRequest("Invite has reached max uses".into()));
         }
-    }
 
     if guilds::is_member(&state.db, invite.guild_id, user_id).await? {
         return Err(AppError::BadRequest(
