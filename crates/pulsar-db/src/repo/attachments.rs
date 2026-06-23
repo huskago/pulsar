@@ -76,3 +76,15 @@ pub async fn find_by_messages(
     .await
     .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
 }
+
+pub async fn delete_by_message_ids(pool: &PgPool, message_ids: &[i64]) -> Result<(), AppError> {
+    if message_ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query("DELETE FROM attachments WHERE message_id = ANY($1)")
+        .bind(message_ids)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("delete_by_message_ids: {}", e)))?;
+    Ok(())
+}

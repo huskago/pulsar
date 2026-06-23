@@ -69,6 +69,57 @@ pub async fn use_invite(pool: &PgPool, code: &str) -> Result<bool, AppError> {
     Ok(result.is_some())
 }
 
+pub async fn join_atomically(pool: &PgPool, code: &str, user_id: i64) -> Result<i64, AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("TX begin: {}", e)))?;
+
+    let guild_id = sqlx::query_scalar::<_, i64>(
+        "UPDATE invites SET uses = uses + 1
+         WHERE code = $1
+           AND (max_uses IS NULL OR uses < max_uses)
+           AND (expires_at IS NULL OR expires_at > NOW())
+         RETURNING guild_id",
+    )
+    .bind(code)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("use_invite: {}", e)))?
+    .ok_or_else(|| AppError::BadRequest("Invite is no longer valid".into()))?;
+
+    let already_member = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM guild_members WHERE guild_id = $1 AND user_id = $2",
+    )
+    .bind(guild_id)
+    .bind(user_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("is_member: {}", e)))?;
+
+    if already_member > 0 {
+        tx.rollback()
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("rollback: {}", e)))?;
+        return Err(AppError::BadRequest("Already a member of this guild".into()));
+    }
+
+    sqlx::query(
+        "INSERT INTO guild_members (guild_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(guild_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("add_member: {}", e)))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("commit: {}", e)))?;
+
+    Ok(guild_id)
+}
+
 pub async fn delete(pool: &PgPool, code: &str, guild_id: i64) -> Result<bool, AppError> {
     let result = sqlx::query("DELETE FROM invites WHERE code = $1 AND guild_id = $2")
         .bind(code)

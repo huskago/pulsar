@@ -122,6 +122,7 @@ pub async fn list_invites(
 }
 
 pub async fn get_invite(
+    _auth: AuthUser,
     State(state): State<AppState>,
     Path(code): Path<String>,
 ) -> Result<Json<InviteResponse>, AppError> {
@@ -167,7 +168,7 @@ pub async fn join_invite(
 
     let invite = invites::find_by_code(&state.db, &code)
         .await?
-        .ok_or(AppError::NotFound("Invite not found or expired".into()))?;
+        .ok_or(AppError::NotFound("Invite not found".into()))?;
 
     if let Some(expires_at) = invite.expires_at
         && expires_at < chrono::Utc::now() {
@@ -179,33 +180,22 @@ pub async fn join_invite(
             return Err(AppError::BadRequest("Invite has reached max uses".into()));
         }
 
-    if guilds::is_member(&state.db, invite.guild_id, user_id).await? {
-        return Err(AppError::BadRequest(
-            "Already a member of this guild".into(),
-        ));
-    }
+    let guild_id = invites::join_atomically(&state.db, &code, user_id).await?;
 
-    let used = invites::use_invite(&state.db, &code).await?;
-    if !used {
-        return Err(AppError::BadRequest("Invite is no longer valid".into()));
-    }
-
-    guilds::add_member(&state.db, invite.guild_id, user_id).await?;
-
-    let guild = guilds::find_by_id(&state.db, invite.guild_id)
+    let guild = guilds::find_by_id(&state.db, guild_id)
         .await?
         .ok_or(AppError::NotFound("Guild not found".into()))?;
 
     info!(
         code = %code,
-        guild_id = %invite.guild_id,
+        guild_id = %guild_id,
         user_id = %user_id,
         "User joined guild via invite"
     );
 
     Ok(Json(InviteResponse {
         code: invite.code,
-        guild_id: invite.guild_id.to_string(),
+        guild_id: guild_id.to_string(),
         guild_name: guild.name,
         creator_id: invite.creator_id.to_string(),
         max_uses: invite.max_uses,

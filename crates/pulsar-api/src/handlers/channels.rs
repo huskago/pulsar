@@ -168,7 +168,7 @@ pub async fn list_messages(
         return Err(AppError::Forbidden);
     }
 
-    let limit = params.limit.unwrap_or(50).min(100) as i32;
+    let limit = params.limit.unwrap_or(50).max(1).min(100) as i32;
     let before = params.before.and_then(|b| b.parse::<i64>().ok());
 
     let dek = get_channel_dek(&state, channel_id).await?;
@@ -293,6 +293,24 @@ pub async fn delete_channel(
     }
     perms::check_permission(&state.db, guild_id, user_id, Permissions::MANAGE_CHANNELS).await?;
 
+    let scylla_msgs = pulsar_scylla::messages::find_by_channel(
+        &state.scylla, channel_id, 10_000i32, None,
+    ).await.unwrap_or_default();
+
+    let message_ids: Vec<i64> = scylla_msgs.iter().map(|m| m.message_id).collect();
+
+    if !message_ids.is_empty() {
+        let atts = attachments::find_by_messages(&state.db, &message_ids).await.unwrap_or_default();
+        for att in &atts {
+            if let Err(e) = state.storage.delete(&att.storage_key).await {
+                tracing::warn!("Failed to delete attachment {} from storage: {}", att.storage_key, e);
+            }
+        }
+        if let Err(e) = attachments::delete_by_message_ids(&state.db, &message_ids).await {
+            tracing::warn!("Failed to delete attachment rows for channel {}: {}", channel_id, e);
+        }
+    }
+
     if let Err(e) = pulsar_scylla::messages::delete_by_channel(&state.scylla, channel_id).await {
         tracing::warn!("Failed to delete ScyllaDB messages for channel {}: {}", channel_id, e);
     }
@@ -330,6 +348,7 @@ pub async fn edit_message(
         if !guilds::is_member(&state.db, gid, user_id).await? {
             return Err(AppError::Forbidden);
         }
+        perms::check_permission(&state.db, gid, user_id, Permissions::SEND_MESSAGES).await?;
     } else {
         return Err(AppError::Forbidden);
     }

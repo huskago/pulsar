@@ -112,9 +112,16 @@ pub async fn update_relationship(
             Ok(Json(serde_json::json!({ "status": "friends" })))
         }
         "decline" => {
-            relationships::decline_friend_request(&state.db, user_id, target_id).await?;
-            info!(user = %user_id, target = %target_id, "Friend request declined");
-            Ok(Json(serde_json::json!({ "status": "declined" })))
+            let rel = relationships::get_relationship(&state.db, user_id, target_id).await?;
+            match rel.map(|r| r.kind).as_deref() {
+                Some("pending_incoming") => {
+                    relationships::decline_friend_request(&state.db, user_id, target_id).await?;
+                    info!(user = %user_id, target = %target_id, "Friend request declined");
+                    Ok(Json(serde_json::json!({ "status": "declined" })))
+                }
+                Some(_) => Err(AppError::BadRequest("No pending friend request from this user".into())),
+                None => Err(AppError::NotFound("No relationship found".into())),
+            }
         }
         _ => Err(AppError::BadRequest("action must be 'accept' or 'decline'".into())),
     }
@@ -163,12 +170,14 @@ pub async fn list_relationships(
     let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
 
     let kinds: Vec<&str> = match params.kind.as_deref() {
-        Some("friend") => vec!["friend"],
+        Some("friend") | None => vec!["friend"],
         Some("pending") => vec!["pending_incoming", "pending_outgoing"],
         Some("blocked") => vec!["blocked"],
         Some("incoming") => vec!["pending_incoming"],
         Some("outgoing") => vec!["pending_outgoing"],
-        _ => vec!["friend"],
+        Some(other) => return Err(AppError::BadRequest(
+            format!("Unknown relationship kind: '{}'. Valid values: friend, pending, blocked, incoming, outgoing", other)
+        )),
     };
 
     let mut all_rows = Vec::new();

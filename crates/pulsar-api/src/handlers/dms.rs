@@ -82,8 +82,14 @@ pub async fn open_dm(
                     channel_keys::upsert(&state.db, new_id, &sealed).await?;
                     new_id
                 }
-                Err(_) => {
-                    // Race condition: another request created the DM concurrently
+                Err(e) => {
+                    let is_unique_violation = matches!(
+                        &e,
+                        AppError::Internal(inner) if inner.to_string().contains("23505")
+                    );
+                    if !is_unique_violation {
+                        return Err(e);
+                    }
                     dms::find_between(&state.db, user_id, target_id)
                         .await?
                         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("DM channel lost after concurrent create")))?
@@ -147,13 +153,13 @@ pub async fn create_group_dm(
         if uid == user_id { continue; }
         if participant_ids.contains(&uid) { continue; }
 
-        let target = users::find_by_id(&state.db, uid)
-            .await?
-            .ok_or(AppError::NotFound(format!("User {} not found", uid)))?;
-
         if !privacy_check::can_dm(&state.db, user_id, uid).await? {
             return Err(AppError::NotFound(format!("User {} not found", uid)));
         }
+
+        let target = users::find_by_id(&state.db, uid)
+            .await?
+            .ok_or(AppError::NotFound(format!("User {} not found", uid)))?;
 
         participant_ids.push(uid);
         participant_infos.push(DmUserInfo {
