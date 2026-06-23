@@ -13,6 +13,8 @@ pub struct SessionRow {
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub last_used: DateTime<Utc>,
+    #[serde(skip)]
+    pub current_jti: Option<String>,
 }
 
 pub async fn insert(
@@ -86,6 +88,46 @@ pub async fn delete_owned(pool: &PgPool, session_id: Uuid, user_id: i64) -> Resu
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("sessions delete_owned: {}", e)))?;
     Ok(result.rows_affected() > 0)
+}
+
+pub async fn delete_owned_returning_jti(
+    pool: &PgPool,
+    session_id: Uuid,
+    user_id: i64,
+) -> Result<(bool, Option<String>), AppError> {
+    let row: Option<(Option<String>,)> = sqlx::query_as(
+        "DELETE FROM sessions WHERE id = $1 AND user_id = $2 RETURNING current_jti",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("sessions delete_owned_jti: {}", e)))?;
+    match row {
+        None => Ok((false, None)),
+        Some((jti,)) => Ok((true, jti)),
+    }
+}
+
+pub async fn update_jti(pool: &PgPool, session_id: Uuid, jti: &str) -> Result<(), AppError> {
+    sqlx::query("UPDATE sessions SET current_jti = $1 WHERE id = $2")
+        .bind(jti)
+        .bind(session_id)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("sessions update_jti: {}", e)))?;
+    Ok(())
+}
+
+pub async fn list_jtis_for_user(pool: &PgPool, user_id: i64) -> Result<Vec<String>, AppError> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT current_jti FROM sessions WHERE user_id = $1 AND current_jti IS NOT NULL",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("sessions list_jtis: {}", e)))?;
+    Ok(rows.into_iter().map(|(jti,)| jti).collect())
 }
 
 pub async fn touch(pool: &PgPool, session_id: Uuid) -> Result<(), AppError> {

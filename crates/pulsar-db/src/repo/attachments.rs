@@ -77,6 +77,19 @@ pub async fn find_by_messages(
     .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
 }
 
+pub async fn find_by_storage_key(
+    pool: &PgPool,
+    storage_key: &str,
+) -> Result<Option<AttachmentRow>, AppError> {
+    sqlx::query_as::<_, AttachmentRow>(
+        "SELECT * FROM attachments WHERE storage_key = $1 LIMIT 1",
+    )
+    .bind(storage_key)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
+}
+
 pub async fn delete_by_message_ids(pool: &PgPool, message_ids: &[i64]) -> Result<(), AppError> {
     if message_ids.is_empty() {
         return Ok(());

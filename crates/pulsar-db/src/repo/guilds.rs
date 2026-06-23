@@ -128,6 +128,17 @@ pub async fn list_for_user(pool: &PgPool, user_id: i64) -> Result<Vec<GuildRow>,
     .map_err(|e| AppError::Internal(anyhow::anyhow!("guilds list_for_user: {}", e)))
 }
 
+pub async fn count_owned_by_user(pool: &PgPool, user_id: i64) -> Result<i64, AppError> {
+    let count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM guilds WHERE owner_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))?;
+    Ok(count)
+}
+
 pub async fn add_member(pool: &PgPool, guild_id: i64, user_id: i64) -> Result<(), AppError> {
     sqlx::query(
         "INSERT INTO guild_members (guild_id, user_id)
