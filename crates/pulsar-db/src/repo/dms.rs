@@ -139,3 +139,89 @@ pub async fn get_participants(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))
 }
+
+pub async fn find_group_between(
+    pool: &PgPool,
+    participant_ids: &[i64],
+) -> Result<Option<i64>, AppError> {
+    let n = participant_ids.len() as i64;
+    let row = sqlx::query_scalar::<_, i64>(
+        "SELECT dc.channel_id
+         FROM dm_channels dc
+         JOIN channels c ON c.id = dc.channel_id
+         WHERE dc.is_group = TRUE
+         GROUP BY dc.channel_id
+         HAVING
+             COUNT(*) = $1
+             AND COUNT(*) FILTER (WHERE dc.user_id = ANY($2::bigint[])) = $1
+         LIMIT 1",
+    )
+    .bind(n)
+    .bind(participant_ids)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("DB error: {}", e)))?;
+    Ok(row)
+}
+
+pub async fn create_group(
+    pool: &PgPool,
+    channel_id: i64,
+    name: Option<&str>,
+    owner_id: i64,
+    participant_ids: &[i64],
+    sealed_dek: &[u8],
+) -> Result<(), AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("TX begin: {}", e)))?;
+
+    sqlx::query(
+        "INSERT INTO channels (id, guild_id, name, kind, position)
+         VALUES ($1, NULL, $2, 'dm', 0)",
+    )
+    .bind(channel_id)
+    .bind(name.unwrap_or("Group DM"))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Create group channel: {}", e)))?;
+
+    for &pid in participant_ids {
+        sqlx::query(
+            "INSERT INTO dm_channels (channel_id, user_id, is_group) VALUES ($1, $2, TRUE)",
+        )
+        .bind(channel_id)
+        .bind(pid)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Add participant: {}", e)))?;
+    }
+
+    sqlx::query(
+        "INSERT INTO group_dm_info (channel_id, name, owner_id) VALUES ($1, $2, $3)",
+    )
+    .bind(channel_id)
+    .bind(name)
+    .bind(owner_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Create group info: {}", e)))?;
+
+    sqlx::query(
+        "INSERT INTO channel_keys (channel_id, sealed_dek)
+         VALUES ($1, $2)
+         ON CONFLICT (channel_id) DO UPDATE SET sealed_dek = EXCLUDED.sealed_dek",
+    )
+    .bind(channel_id)
+    .bind(sealed_dek)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("channel_keys upsert: {}", e)))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("TX commit: {}", e)))?;
+
+    Ok(())
+}

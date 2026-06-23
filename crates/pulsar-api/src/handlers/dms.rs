@@ -173,63 +173,28 @@ pub async fn create_group_dm(
         return Err(AppError::BadRequest("Need at least 1 other participant".into()));
     }
 
+    if let Some(existing) = dms::find_group_between(&state.db, &participant_ids).await? {
+        return Ok(Json(GroupDmResponse {
+            channel_id: existing.to_string(),
+            name: payload.name,
+            participants: participant_infos,
+        }));
+    }
+
     let channel_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
     let dek = state.crypto.generate_dek();
     let sealed = state.crypto.seal_dek(&dek)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("DEK seal failed: {}", e)))?;
 
-    let mut tx = state.db.begin()
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("TX begin: {}", e)))?;
-
-    sqlx::query(
-        "INSERT INTO channels (id, guild_id, name, kind, position)
-         VALUES ($1, NULL, $2, 'dm', 0)"
-    )
-        .bind(channel_id)
-        .bind(payload.name.as_deref().unwrap_or("Group DM"))
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Create group channel: {}", e)))?;
-
-    for &pid in &participant_ids {
-        sqlx::query(
-            "INSERT INTO dm_channels (channel_id, user_id, is_group)
-             VALUES ($1, $2, TRUE)"
-        )
-            .bind(channel_id)
-            .bind(pid)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("Add participant: {}", e)))?;
-    }
-
-    sqlx::query(
-        "INSERT INTO group_dm_info (channel_id, name, owner_id)
-         VALUES ($1, $2, $3)"
-    )
-        .bind(channel_id)
-        .bind(payload.name.as_deref())
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Create group info: {}", e)))?;
-
-    sqlx::query(
-        "INSERT INTO channel_keys (channel_id, sealed_dek)
-         VALUES ($1, $2)
-         ON CONFLICT (channel_id) DO UPDATE SET sealed_dek = EXCLUDED.sealed_dek"
-    )
-        .bind(channel_id)
-        .bind(&sealed)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("channel_keys upsert: {}", e)))?;
-
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("TX commit: {}", e)))?;
+    dms::create_group(
+        &state.db,
+        channel_id,
+        payload.name.as_deref(),
+        user_id,
+        &participant_ids,
+        &sealed,
+    ).await?;
 
     info!(channel_id = %channel_id, participants = %participant_ids.len(), "Group DM created");
 
