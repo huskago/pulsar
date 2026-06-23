@@ -70,7 +70,7 @@ pub async fn accept_friend_request(
 
     sqlx::query(
         "UPDATE relationships SET kind = 'friend'
-         WHERE user_id = $1 AND target_id = $2",
+         WHERE user_id = $1 AND target_id = $2 AND kind = 'pending_incoming'",
     )
     .bind(user_id)
     .bind(requester_id)
@@ -80,7 +80,7 @@ pub async fn accept_friend_request(
 
     sqlx::query(
         "UPDATE relationships SET kind = 'friend'
-         WHERE user_id = $1 AND target_id = $2",
+         WHERE user_id = $1 AND target_id = $2 AND kind = 'pending_outgoing'",
     )
     .bind(requester_id)
     .bind(user_id)
@@ -288,7 +288,7 @@ pub async fn has_pending_request(
     let count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM relationships
          WHERE user_id = $1 AND target_id = $2
-           AND kind IN ('pending_outgoing', 'friend')",
+           AND kind = 'pending_outgoing'",
     )
     .bind(sender)
     .bind(target)

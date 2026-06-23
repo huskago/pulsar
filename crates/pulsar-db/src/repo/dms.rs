@@ -45,12 +45,17 @@ pub async fn create(
     user_a: i64,
     user_b: i64,
 ) -> Result<i64, AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("TX: {}", e)))?;
+
     sqlx::query(
         "INSERT INTO channels (id, guild_id, name, kind, position)
          VALUES ($1, NULL, 'dm', 'dm', 0)"
     )
         .bind(channel_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Create DM channel: {}", e)))?;
 
@@ -60,9 +65,13 @@ pub async fn create(
         .bind(channel_id)
         .bind(user_a)
         .bind(user_b)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Add DM participants: {}", e)))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Commit: {}", e)))?;
 
     Ok(channel_id)
 }
