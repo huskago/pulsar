@@ -10,7 +10,7 @@ use pulsar_common::{
     error::AppError,
     models::{
         snowflake::Snowflake,
-        user::{AuthResponse, CreateUser, LoginRequest, User, UserStatus},
+        user::{AuthResponse, CreateUser, LoginRequest, SelfUserResponse, UserStatus},
     },
 };
 use pulsar_db::repo::{sessions, users};
@@ -93,19 +93,19 @@ pub async fn register(
         .jwt
         .generate_token(&row.id.to_string(), &row.username, session_id)?;
 
-    let user = User {
-        id: Snowflake(row.id),
-        username: row.username,
-        email: row.email,
-        password_hash: row.password_hash,
-        avatar_url: row.avatar_url,
-        status: UserStatus::from_db(&row.status),
-    };
-
-    info!(user_id = %user.id, "New user registered");
+    info!(user_id = %row.id, "New user registered");
 
     let updated_jar = jar.add(refresh_cookie(&refresh_token, 30 * 86400));
-    Ok((updated_jar, Json(AuthResponse { token, user })))
+    Ok((updated_jar, Json(AuthResponse {
+        token,
+        user: SelfUserResponse {
+            id: row.id.to_string(),
+            username: row.username,
+            email: row.email,
+            avatar_url: row.avatar_url,
+            status: UserStatus::from_db(&row.status),
+        },
+    })))
 }
 
 pub async fn login(
@@ -143,19 +143,19 @@ pub async fn login(
         .jwt
         .generate_token(&row.id.to_string(), &row.username, session_id)?;
 
-    let user = User {
-        id: Snowflake(row.id),
-        username: row.username,
-        email: row.email,
-        password_hash: row.password_hash,
-        avatar_url: row.avatar_url,
-        status: UserStatus::from_db(&row.status),
-    };
-
-    info!(user_id = %user.id, "User logged in");
+    info!(user_id = %row.id, "User logged in");
 
     let updated_jar = jar.add(refresh_cookie(&refresh_token, 30 * 86400));
-    Ok((updated_jar, Json(AuthResponse { token, user })))
+    Ok((updated_jar, Json(AuthResponse {
+        token,
+        user: SelfUserResponse {
+            id: row.id.to_string(),
+            username: row.username,
+            email: row.email,
+            avatar_url: row.avatar_url,
+            status: UserStatus::from_db(&row.status),
+        },
+    })))
 }
 
 pub async fn refresh(
@@ -172,13 +172,13 @@ pub async fn refresh(
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    let new_refresh_token = Uuid::new_v4().to_string();
-    let new_hash = hash_token(&new_refresh_token);
-    sessions::update_token_hash(&state.db, session.id, &new_hash).await?;
-
     let user = users::find_by_id(&state.db, session.user_id)
         .await?
         .ok_or(AppError::Unauthorized)?;
+
+    let new_refresh_token = Uuid::new_v4().to_string();
+    let new_hash = hash_token(&new_refresh_token);
+    sessions::update_token_hash(&state.db, session.id, &new_hash).await?;
 
     let access_token =
         state
@@ -205,7 +205,7 @@ pub async fn logout(
     sessions::delete(&state.db, session_id).await?;
 
     let now = Utc::now().timestamp();
-    let ttl = (auth.claims.exp - now).max(0) as u64;
+    let ttl = (auth.claims.exp - now).max(1) as u64;
     crate::redis_client::block_jwt(&state.redis, &auth.claims.jti, ttl)
         .await
         .unwrap_or_else(|e| tracing::warn!("Failed to block JWT in Redis: {}", e));
@@ -229,11 +229,10 @@ pub async fn revoke_session(
     Path(session_id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
     let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
-    let all = sessions::list_for_user(&state.db, user_id).await?;
-    if !all.iter().any(|s| s.id == session_id) {
+    let deleted = sessions::delete_owned(&state.db, session_id, user_id).await?;
+    if !deleted {
         return Err(AppError::Forbidden);
     }
-    sessions::delete(&state.db, session_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -243,7 +242,15 @@ pub async fn revoke_all_sessions(
     jar: CookieJar,
 ) -> Result<(CookieJar, StatusCode), AppError> {
     let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+
+    let now = Utc::now().timestamp();
+    let ttl = (auth.claims.exp - now).max(1) as u64;
+    crate::redis_client::block_jwt(&state.redis, &auth.claims.jti, ttl)
+        .await
+        .unwrap_or_else(|e| tracing::warn!("Failed to block JWT in Redis: {}", e));
+
     sessions::delete_all_for_user(&state.db, user_id).await?;
+
     let updated_jar = jar.remove(Cookie::build("refresh_token").path("/").build());
     Ok((updated_jar, StatusCode::NO_CONTENT))
 }

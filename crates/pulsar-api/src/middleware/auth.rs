@@ -31,8 +31,19 @@ impl FromRequestParts<AppState> for AuthUser {
         match crate::redis_client::is_jwt_blocked(&state.redis, &claims.jti).await {
             Ok(true) => return Err(AppError::Unauthorized),
             Ok(false) => {}
-            Err(e) => tracing::warn!("Redis blocklist check failed, allowing request: {}", e),
+            Err(e) => {
+                tracing::error!("Redis blocklist check failed, rejecting request: {}", e);
+                return Err(AppError::Unauthorized);
+            }
         }
+
+        let session_id_str = claims.session_id.clone();
+        let db = state.db.clone();
+        tokio::spawn(async move {
+            if let Ok(sid) = session_id_str.parse::<uuid::Uuid>() {
+                let _ = pulsar_db::repo::sessions::touch(&db, sid).await;
+            }
+        });
 
         Ok(AuthUser { claims })
     }

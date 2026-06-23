@@ -1,10 +1,7 @@
 use axum::{extract::State, Json};
 use pulsar_common::{
     error::AppError,
-    models::{
-        snowflake::Snowflake,
-        user::{User, UserStatus},
-    },
+    models::user::{SelfUserResponse, UserStatus},
     privacy::{DmPrivacy, FriendRequestPrivacy},
 };
 use pulsar_db::repo::users;
@@ -35,7 +32,7 @@ pub async fn update_me(
     auth: AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<UpdateProfile>,
-) -> Result<Json<User>, AppError> {
+) -> Result<Json<SelfUserResponse>, AppError> {
     let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
 
     let current = users::find_by_id(&state.db, user_id)
@@ -56,17 +53,16 @@ pub async fn update_me(
 
     let row = users::update_profile(&state.db, user_id, username, avatar_url, status).await?;
 
-    Ok(Json(User {
-        id: Snowflake(row.id),
+    Ok(Json(SelfUserResponse {
+        id: row.id.to_string(),
         username: row.username,
         email: row.email,
-        password_hash: row.password_hash,
         avatar_url: row.avatar_url,
         status: UserStatus::from_db(&row.status),
     }))
 }
 
-pub async fn get_me(auth: AuthUser, State(state): State<AppState>) -> Result<Json<User>, AppError> {
+pub async fn get_me(auth: AuthUser, State(state): State<AppState>) -> Result<Json<SelfUserResponse>, AppError> {
     let user_id: i64 = auth
         .claims
         .sub
@@ -77,11 +73,10 @@ pub async fn get_me(auth: AuthUser, State(state): State<AppState>) -> Result<Jso
         .await?
         .ok_or(AppError::NotFound("User not found".into()))?;
 
-    Ok(Json(User {
-        id: Snowflake(row.id),
+    Ok(Json(SelfUserResponse {
+        id: row.id.to_string(),
         username: row.username,
         email: row.email,
-        password_hash: row.password_hash,
         avatar_url: row.avatar_url,
         status: UserStatus::from_db(&row.status),
     }))

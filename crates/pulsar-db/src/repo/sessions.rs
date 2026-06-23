@@ -70,12 +70,22 @@ pub async fn delete_all_for_user(pool: &PgPool, user_id: i64) -> Result<(), AppE
 
 pub async fn list_for_user(pool: &PgPool, user_id: i64) -> Result<Vec<SessionRow>, AppError> {
     sqlx::query_as::<_, SessionRow>(
-        "SELECT * FROM sessions WHERE user_id = $1 ORDER BY last_used DESC",
+        "SELECT * FROM sessions WHERE user_id = $1 AND expires_at > NOW() ORDER BY last_used DESC",
     )
     .bind(user_id)
     .fetch_all(pool)
     .await
     .map_err(|e| AppError::Internal(anyhow::anyhow!("sessions list: {}", e)))
+}
+
+pub async fn delete_owned(pool: &PgPool, session_id: Uuid, user_id: i64) -> Result<bool, AppError> {
+    let result = sqlx::query("DELETE FROM sessions WHERE id = $1 AND user_id = $2")
+        .bind(session_id)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("sessions delete_owned: {}", e)))?;
+    Ok(result.rows_affected() > 0)
 }
 
 pub async fn touch(pool: &PgPool, session_id: Uuid) -> Result<(), AppError> {

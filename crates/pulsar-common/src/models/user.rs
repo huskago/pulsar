@@ -48,8 +48,25 @@ pub struct LoginRequest {
     pub device_name: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SelfUserResponse {
+    pub id: String,
+    pub username: String,
+    pub email: String,
+    pub avatar_url: Option<String>,
+    pub status: UserStatus,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PublicUserResponse {
+    pub id: String,
+    pub username: String,
+    pub avatar_url: Option<String>,
+    pub status: UserStatus,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,
-    pub user: User,
+    pub user: SelfUserResponse,
 }
