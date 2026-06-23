@@ -3,7 +3,7 @@ use pulsar_common::{
     error::AppError,
     models::user::{SelfUserResponse, UserStatus},
 };
-use pulsar_db::repo::users;
+use pulsar_db::repo::{sessions, users};
 use serde::{Deserialize, Serialize};
 
 use crate::{middleware::auth::AuthUser, state::AppState};
@@ -56,6 +56,16 @@ pub async fn update_me(
     }
 
     let row = users::update_profile(&state.db, user_id, username, avatar_url, status).await?;
+
+    if username != current.username {
+        let jtis = sessions::list_jtis_for_user(&state.db, user_id).await.unwrap_or_default();
+        for jti in jtis {
+            crate::redis_client::block_jwt(&state.redis, &jti, 15 * 60)
+                .await
+                .unwrap_or_else(|e| tracing::warn!("Failed to block JWT on username change: {}", e));
+        }
+        sessions::delete_all_for_user(&state.db, user_id).await.ok();
+    }
 
     Ok(Json(SelfUserResponse {
         id: row.id.to_string(),
