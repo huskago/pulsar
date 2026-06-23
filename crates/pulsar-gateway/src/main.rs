@@ -12,6 +12,7 @@ use tracing_subscriber::EnvFilter;
 mod connection;
 mod crypto_helpers;
 mod handler;
+mod rate_limiter;
 mod redis_client;
 mod state;
 
@@ -81,6 +82,7 @@ async fn main() {
         crypto,
         scylla,
         storage,
+        rate_limiter: rate_limiter::GatewayRateLimiter::new(),
     };
 
     let app = Router::new()

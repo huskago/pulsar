@@ -73,10 +73,10 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
             return;
         }
     };
-    let guild_ids: Vec<String> = user_guilds.iter().map(|g| g.id.to_string()).collect();
+    let guild_ids: Vec<i64> = user_guilds.iter().map(|g| g.id).collect();
 
     let mut guild_subs: Vec<async_nats::Subscriber> = Vec::new();
-    for gid in &guild_ids {
+    for &gid in &guild_ids {
         if let Ok(sub) = state.nats.subscribe(&subjects::chat_guild(gid)).await {
             guild_subs.push(sub);
         }
@@ -89,7 +89,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
     }
 
     // Subscribe to personal DM inbox
-    let dm_subject = subjects::dm_user(&user_id);
+    let dm_subject = subjects::dm_user(uid);
     let nats_dm_sub = match state.nats.subscribe(&dm_subject).await {
         Ok(sub) => sub,
         Err(e) => {
@@ -138,7 +138,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
                 status: pulsar_common::models::user::UserStatus::Online,
             };
             if let Ok(payload) = serde_json::to_vec(&event) {
-                for gid in &gids {
+                for &gid in &gids {
                     let _ = nats.publish(&subjects::presence_guild(gid), &payload).await;
                 }
             }
@@ -208,7 +208,7 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
                 status: pulsar_common::models::user::UserStatus::Offline,
             };
             if let Ok(payload) = serde_json::to_vec(&event) {
-                for gid in &guild_ids {
+                for &gid in &guild_ids {
                     let _ = nats.publish(&subjects::presence_guild(gid), &payload).await;
                 }
             }
@@ -273,6 +273,10 @@ async fn handle_client_message(
             content,
             attachments,
         } => {
+            if !state.rate_limiter.check(user_id).await {
+                warn!(user_id = %user_id, "SendMessage rate limit exceeded");
+                return;
+            }
             let ch_id: i64 = match channel_id.parse() {
                 Ok(id) => id,
                 Err(_) => return,
@@ -316,6 +320,11 @@ async fn handle_client_message(
                 return;
             }
 
+            if content.len() > 4000 {
+                warn!(user_id = %user_id, "SendMessage content exceeds 4000 chars, rejected");
+                return;
+            }
+
             let dek = match crate::crypto_helpers::get_channel_dek(state, ch_id).await {
                 Ok(d) => d,
                 Err(e) => {
@@ -351,6 +360,17 @@ async fn handle_client_message(
                 if att.key.is_empty() {
                     warn!(user_id = %user_id, "Rejected attachment without server key");
                     continue;
+                }
+                match pulsar_db::repo::pending_attachments::take(&state.db, u_id, &att.key).await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        warn!(user_id = %user_id, key = %att.key, "Rejected attachment with unrecognised key");
+                        continue;
+                    }
+                    Err(e) => {
+                        error!("pending_attachments lookup failed: {}", e);
+                        continue;
+                    }
                 }
                 let url = state.storage.generate_presigned_url(&att.key, 900)
                     .await
@@ -406,7 +426,7 @@ async fn handle_client_message(
                 match pulsar_db::repo::dms::get_participants(&state.db, ch_id).await {
                     Ok(participants) => {
                         for participant_id in participants {
-                            let subject = subjects::dm_user(&participant_id.to_string());
+                            let subject = subjects::dm_user(participant_id);
                             if let Err(e) = state.nats.publish(&subject, &payload).await {
                                 error!("Failed to publish DM to user {}: {}", participant_id, e);
                             }
@@ -415,13 +435,18 @@ async fn handle_client_message(
                     Err(e) => error!("Failed to get DM participants for channel {}: {}", ch_id, e),
                 }
             } else if let Some(gid) = channel.guild_id {
-                let subject = subjects::chat_channel(&gid.to_string(), &channel_id);
+                let subject = subjects::chat_channel(gid, ch_id);
                 if let Err(e) = state.nats.publish_persistent(&subject, &payload).await {
                     error!("Failed to publish to NATS: {}", e);
                 }
             }
         }
         ClientEvent::StartTyping { channel_id } => {
+            if !state.rate_limiter.check(user_id).await {
+                warn!(user_id = %user_id, "StartTyping rate limit exceeded");
+                return;
+            }
+
             let ch_id: i64 = match channel_id.parse() {
                 Ok(id) => id,
                 Err(_) => return,
@@ -446,6 +471,20 @@ async fn handle_client_message(
                     Ok(true) => {}
                     _ => return,
                 }
+                let guild = match pulsar_db::repo::guilds::find_by_id(&state.db, gid).await {
+                    Ok(Some(g)) => g,
+                    _ => return,
+                };
+                if guild.owner_id != u_id {
+                    let perms_bits = match pulsar_db::repo::roles::get_member_permissions(&state.db, gid, u_id).await {
+                        Ok(p) => p,
+                        Err(_) => return,
+                    };
+                    let perms = pulsar_common::permissions::Permissions::new(perms_bits);
+                    if !perms.has(pulsar_common::permissions::Permissions::SEND_MESSAGES) {
+                        return;
+                    }
+                }
             } else {
                 return;
             }
@@ -463,14 +502,14 @@ async fn handle_client_message(
                 match pulsar_db::repo::dms::get_participants(&state.db, ch_id).await {
                     Ok(participants) => {
                         for participant_id in participants {
-                            let subject = subjects::dm_user(&participant_id.to_string());
+                            let subject = subjects::dm_user(participant_id);
                             let _ = state.nats.publish(&subject, &payload).await;
                         }
                     }
                     Err(e) => error!("Failed to get DM participants: {}", e),
                 }
             } else if let Some(gid) = channel.guild_id {
-                let subject = subjects::typing_channel(&gid.to_string(), &channel_id);
+                let subject = subjects::typing_channel(gid, ch_id);
                 let _ = state.nats.publish(&subject, &payload).await;
             }
         }

@@ -1,4 +1,5 @@
 use crate::connection::ConnectionManager;
+use crate::rate_limiter::GatewayRateLimiter;
 use deadpool_redis::Pool as RedisPool;
 use pulsar_auth::jwt::JwtManager;
 use pulsar_crypto::CryptoManager;
@@ -17,4 +18,5 @@ pub struct GatewayState {
     pub crypto: CryptoManager,
     pub scylla: ScyllaClient,
     pub storage: StorageClient,
+    pub rate_limiter: GatewayRateLimiter,
 }
