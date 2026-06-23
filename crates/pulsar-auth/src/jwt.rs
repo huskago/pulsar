@@ -5,12 +5,15 @@ use uuid::Uuid;
 
 use pulsar_common::error::AppError;
 
+const ISSUER: &str = "pulsar";
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub sub: String,
     pub username: String,
     pub session_id: String,
     pub jti: String,
+    pub iss: String,
     pub exp: i64,
     pub iat: i64,
 }
@@ -42,6 +45,7 @@ impl JwtManager {
             username: username.to_string(),
             session_id: session_id.to_string(),
             jti: Uuid::new_v4().to_string(),
+            iss: ISSUER.to_string(),
             exp: (now + self.access_token_ttl).timestamp(),
             iat: now.timestamp(),
         };
@@ -53,6 +57,7 @@ impl JwtManager {
     pub fn validate_token(&self, token: &str) -> Result<Claims, AppError> {
         let mut validation = Validation::new(Algorithm::HS256);
         validation.set_required_spec_claims(&["sub", "exp", "iat", "jti", "session_id"]);
+        validation.set_issuer(&[ISSUER]);
 
         let token_data: TokenData<Claims> =
             jsonwebtoken::decode(token, &self.decoding_key, &validation)

@@ -24,3 +24,12 @@ pub async fn set_sealed_dek(pool: &Pool, channel_id: i64, sealed_dek: &[u8]) -> 
         .map_err(|e| anyhow::anyhow!("Redis SET failed: {}", e))?;
     Ok(())
 }
+
+pub async fn is_jwt_blocked(pool: &Pool, jti: &str) -> anyhow::Result<bool> {
+    let mut conn = pool.get().await
+        .map_err(|e| anyhow::anyhow!("Redis connection failed: {}", e))?;
+    let key = format!("jwt:block:{}", jti);
+    let exists: bool = conn.exists(&key).await
+        .map_err(|e| anyhow::anyhow!("Redis EXISTS failed: {}", e))?;
+    Ok(exists)
+}
