@@ -28,3 +28,4 @@ dotenvy.workspace = true
 uuid.workspace = true
 sha2 = { workspace = true }
 time = { workspace = true }
+infer = "0.16"

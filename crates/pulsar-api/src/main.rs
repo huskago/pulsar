@@ -45,6 +45,10 @@ async fn main() {
         .init();
 
     let config = AppConfig::from_env();
+    {
+        let lk_secret = std::env::var("LIVEKIT_API_SECRET").unwrap_or_default();
+        assert!(lk_secret.len() >= 32, "LIVEKIT_API_SECRET must be at least 32 characters");
+    }
     let jwt_secret = std::env::var("JWT_SECRET")
         .expect("JWT_SECRET must be set");
     assert!(jwt_secret.len() >= 32, "JWT_SECRET must be at least 32 characters");
@@ -74,6 +78,7 @@ async fn main() {
         .expect("Failed to connect to ScyllaDB");
 
     let auth_limiter = middleware::rate_limit::AuthRateLimiter::new();
+    let invite_limiter = middleware::rate_limit::AuthRateLimiter::new();
 
     let state = AppState {
         db,
@@ -114,10 +119,20 @@ async fn main() {
             }
         ));
 
+    let invite_routes = Router::new()
+        .route("/invites/{code}", get(invites::get_invite))
+        .route("/invites/{code}/join", post(invites::join_invite))
+        .layer(axum::middleware::from_fn(
+            move |req, next| {
+                let limiter = invite_limiter.clone();
+                middleware::rate_limit::auth_rate_limit_fn(limiter, req, next)
+            }
+        ));
+
     let app = Router::new()
         .route("/health", get(health))
         .merge(auth_routes)
-        .route("/invites/{code}", get(invites::get_invite))
+        .merge(invite_routes)
         .route("/auth/logout", post(auth::logout))
         .route("/auth/sessions", get(auth::list_sessions).delete(auth::revoke_all_sessions))
         .route("/auth/sessions/{id}", delete(auth::revoke_session))
@@ -152,7 +167,6 @@ async fn main() {
             "/guilds/{guild_id}/invites",
             get(invites::list_invites).post(invites::create_invite),
         )
-        .route("/invites/{code}/join", post(invites::join_invite))
         .route("/voice/token", post(voice::get_voice_token))
         .route("/upload", post(uploads::upload_file)
             .layer(DefaultBodyLimit::max(26 * 1024 * 1024)))

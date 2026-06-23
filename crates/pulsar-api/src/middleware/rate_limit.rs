@@ -33,16 +33,20 @@ impl AuthRateLimiter {
     }
 }
 
+fn extract_client_ip(request: &Request) -> IpAddr {
+    request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip())
+        .unwrap_or(IpAddr::from([127, 0, 0, 1]))
+}
+
 pub async fn auth_rate_limit_fn(
     limiter: AuthRateLimiter,
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let ip = request
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|ci| ci.0.ip())
-        .unwrap_or(IpAddr::from([127, 0, 0, 1]));
+    let ip = extract_client_ip(&request);
 
     if !limiter.check(ip).await {
         return Err(StatusCode::TOO_MANY_REQUESTS);

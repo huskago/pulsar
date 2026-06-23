@@ -21,17 +21,6 @@ pub struct StorageConfig {
     pub secret_key: String,
 }
 
-impl Default for StorageConfig {
-    fn default() -> Self {
-        Self {
-            endpoint: "http://localhost:9000".to_string(),
-            bucket: "pulsar-uploads".to_string(),
-            access_key: "pulsar".to_string(),
-            secret_key: "pulsarsecret".to_string(),
-        }
-    }
-}
-
 impl StorageConfig {
     pub fn from_env() -> Self {
         let endpoint = std::env::var("STORAGE_ENDPOINT")
@@ -42,9 +31,9 @@ impl StorageConfig {
             endpoint,
             bucket,
             access_key: std::env::var("STORAGE_ACCESS_KEY")
-                .unwrap_or_else(|_| "pulsar".to_string()),
+                .expect("STORAGE_ACCESS_KEY must be set"),
             secret_key: std::env::var("STORAGE_SECRET_KEY")
-                .unwrap_or_else(|_| "pulsarsecret".to_string()),
+                .expect("STORAGE_SECRET_KEY must be set"),
         }
     }
 }
@@ -91,9 +80,6 @@ impl StorageClient {
             info!(bucket = %config.bucket, "Created storage bucket");
         }
 
-        let _ = client.delete_bucket_policy().bucket(&config.bucket).send().await;
-        info!(bucket = %config.bucket, "Bucket set to private (no public policy)");
-
         Ok(Self { client, bucket: config.bucket })
     }
 
@@ -106,7 +92,7 @@ impl StorageClient {
     ) -> anyhow::Result<UploadResult> {
         let size = data.len() as u64;
         let ext = filename.rsplit('.').next().unwrap_or("bin");
-        let key = format!("{}/{}.{}", channel_id, Uuid::new_v4(), ext);
+        let key = format!("{}_{}.{}", channel_id, Uuid::new_v4(), ext);
 
         let mut hasher = Md5::new();
         Digest::update(&mut hasher, &data);

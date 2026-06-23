@@ -11,13 +11,22 @@ const MAX_FILE_SIZE: usize = 25 * 1024 * 1024;
 const PRESIGNED_TTL_SECS: u64 = 900; // 15 minutes
 
 const ALLOWED_CONTENT_TYPES: &[&str] = &[
-    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+    "image/jpeg", "image/png", "image/gif", "image/webp",
     "video/mp4", "video/webm",
     "audio/mpeg", "audio/ogg", "audio/wav",
     "application/pdf",
     "text/plain",
     "application/zip",
 ];
+
+fn has_executable_signature(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"MZ")          // Windows PE (EXE, DLL, COM)
+    || bytes.starts_with(b"\x7FELF") // Linux/Unix ELF
+    || bytes.starts_with(b"#!")      // Shell/script shebang
+    || bytes.starts_with(b"\xCA\xFE\xBA\xBE") // Java class / Mach-O fat binary
+    || bytes.starts_with(b"\xCE\xFA\xED\xFE") // Mach-O 32-bit
+    || bytes.starts_with(b"\xCF\xFA\xED\xFE") // Mach-O 64-bit
+}
 
 #[derive(Debug, Serialize)]
 pub struct UploadResponse {
@@ -78,12 +87,24 @@ pub async fn upload_file(
     let channel_id_str = channel_id.ok_or(AppError::BadRequest("Missing channel_id".into()))?;
     let file_data = file_data.ok_or(AppError::BadRequest("Missing file".into()))?;
     let file_name = file_name.unwrap_or_else(|| "unnamed".to_string());
-    let content_type = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+    let declared_type = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+
+    let content_type = if let Some(kind) = infer::get(&file_data) {
+        kind.mime_type().to_string()
+    } else if declared_type == "text/plain" && file_data.iter().all(|&b| b.is_ascii() || b >= 0x80) {
+        "text/plain".to_string()
+    } else {
+        "application/octet-stream".to_string()
+    };
 
     if !ALLOWED_CONTENT_TYPES.contains(&content_type.as_str()) {
         return Err(AppError::BadRequest(format!(
-            "Content type '{}' is not allowed", content_type
+            "File type '{}' is not allowed", content_type
         )));
+    }
+
+    if has_executable_signature(&file_data) {
+        return Err(AppError::BadRequest("Executable files are not allowed".into()));
     }
 
     let channel_id_num: i64 = channel_id_str
@@ -177,7 +198,7 @@ pub async fn get_attachment_url(
     let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
 
     let channel_id: i64 = key
-        .split('/')
+        .split('_')
         .next()
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| AppError::BadRequest("Invalid attachment key".into()))?;
