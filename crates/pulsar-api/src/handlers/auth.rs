@@ -89,9 +89,10 @@ pub async fn register(
     )
     .await?;
 
-    let token = state
+    let (token, jti) = state
         .jwt
         .generate_token(&row.id.to_string(), &row.username, session_id)?;
+    let _ = sessions::update_jti(&state.db, session_id, &jti).await;
 
     info!(user_id = %row.id, "New user registered");
 
@@ -139,9 +140,10 @@ pub async fn login(
     )
     .await?;
 
-    let token = state
+    let (token, jti) = state
         .jwt
         .generate_token(&row.id.to_string(), &row.username, session_id)?;
+    let _ = sessions::update_jti(&state.db, session_id, &jti).await;
 
     info!(user_id = %row.id, "User logged in");
 
@@ -180,10 +182,11 @@ pub async fn refresh(
     let new_hash = hash_token(&new_refresh_token);
     sessions::update_token_hash(&state.db, session.id, &new_hash).await?;
 
-    let access_token =
+    let (access_token, jti) =
         state
             .jwt
             .generate_token(&session.user_id.to_string(), &user.username, session.id)?;
+    let _ = sessions::update_jti(&state.db, session.id, &jti).await;
 
     let updated_jar = jar
         .remove(Cookie::build("refresh_token").path("/").build())
@@ -229,9 +232,14 @@ pub async fn revoke_session(
     Path(session_id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
     let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
-    let deleted = sessions::delete_owned(&state.db, session_id, user_id).await?;
+    let (deleted, jti) = sessions::delete_owned_returning_jti(&state.db, session_id, user_id).await?;
     if !deleted {
         return Err(AppError::Forbidden);
+    }
+    if let Some(j) = jti {
+        crate::redis_client::block_jwt(&state.redis, &j, 15 * 60)
+            .await
+            .unwrap_or_else(|e| tracing::warn!("Failed to block JWT on session revoke: {}", e));
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -243,11 +251,12 @@ pub async fn revoke_all_sessions(
 ) -> Result<(CookieJar, StatusCode), AppError> {
     let user_id: i64 = auth.claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
 
-    let now = Utc::now().timestamp();
-    let ttl = (auth.claims.exp - now).max(1) as u64;
-    crate::redis_client::block_jwt(&state.redis, &auth.claims.jti, ttl)
-        .await
-        .unwrap_or_else(|e| tracing::warn!("Failed to block JWT in Redis: {}", e));
+    let jtis = sessions::list_jtis_for_user(&state.db, user_id).await.unwrap_or_default();
+    for jti in jtis {
+        crate::redis_client::block_jwt(&state.redis, &jti, 15 * 60)
+            .await
+            .unwrap_or_else(|e| tracing::warn!("Failed to block JWT in Redis: {}", e));
+    }
 
     sessions::delete_all_for_user(&state.db, user_id).await?;
 

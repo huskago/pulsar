@@ -38,20 +38,22 @@ impl JwtManager {
         user_id: &str,
         username: &str,
         session_id: Uuid,
-    ) -> Result<String, AppError> {
+    ) -> Result<(String, String), AppError> {
         let now = Utc::now();
+        let jti = Uuid::new_v4().to_string();
         let claims = Claims {
             sub: user_id.to_string(),
             username: username.to_string(),
             session_id: session_id.to_string(),
-            jti: Uuid::new_v4().to_string(),
+            jti: jti.clone(),
             iss: ISSUER.to_string(),
             exp: (now + self.access_token_ttl).timestamp(),
             iat: now.timestamp(),
         };
 
-        jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &self.encoding_key)
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("JWT encode error: {}", e)))
+        let token = jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &self.encoding_key)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("JWT encode error: {}", e)))?;
+        Ok((token, jti))
     }
 
     pub fn validate_token(&self, token: &str) -> Result<Claims, AppError> {
