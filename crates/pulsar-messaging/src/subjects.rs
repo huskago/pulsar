@@ -20,3 +20,11 @@ pub fn presence_guild(guild_id: &str) -> String {
 pub fn typing_channel(guild_id: &str, channel_id: &str) -> String {
     format!("typing.{}.{}", guild_id, channel_id)
 }
+
+pub fn typing_guild(guild_id: &str) -> String {
+    format!("typing.{}.>", guild_id)
+}
+
+pub fn dm_user(user_id: &str) -> String {
+    format!("dm.user.{}", user_id)
+}

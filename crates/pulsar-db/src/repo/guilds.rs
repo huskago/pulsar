@@ -115,6 +115,19 @@ pub async fn delete(pool: &PgPool, id: i64) -> Result<(), AppError> {
     Ok(())
 }
 
+pub async fn list_for_user(pool: &PgPool, user_id: i64) -> Result<Vec<GuildRow>, AppError> {
+    sqlx::query_as::<_, GuildRow>(
+        "SELECT g.* FROM guilds g
+         INNER JOIN guild_members gm ON gm.guild_id = g.id
+         WHERE gm.user_id = $1
+         ORDER BY g.id ASC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("guilds list_for_user: {}", e)))
+}
+
 pub async fn add_member(pool: &PgPool, guild_id: i64, user_id: i64) -> Result<(), AppError> {
     sqlx::query(
         "INSERT INTO guild_members (guild_id, user_id)

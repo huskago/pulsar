@@ -52,123 +52,72 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
     };
     let hello_json = match serde_json::to_string(&hello) {
         Ok(j) => j,
-        Err(e) => { error!("Failed to serialize Hello: {}", e); state.connections.remove(&user_id).await; return; }
+        Err(e) => { error!("Failed to serialize Hello: {}", e); drop(rx); state.connections.remove(&user_id).await; return; }
     };
     if sender.send(Message::Text(hello_json.into())).await.is_err() {
+        drop(rx);
         state.connections.remove(&user_id).await;
         return;
     }
 
-    let nats_chat_sub = match state.nats.subscribe("chat.>").await {
+    let uid: i64 = match user_id.parse() {
+        Ok(v) => v,
+        Err(_) => { state.connections.remove(&user_id).await; return; }
+    };
+
+    let user_guilds = match pulsar_db::repo::guilds::list_for_user(&state.db, uid).await {
+        Ok(g) => g,
+        Err(e) => {
+            error!("Failed to fetch guilds for user {}: {}", uid, e);
+            state.connections.remove(&user_id).await;
+            return;
+        }
+    };
+    let guild_ids: Vec<String> = user_guilds.iter().map(|g| g.id.to_string()).collect();
+
+    let mut guild_subs: Vec<async_nats::Subscriber> = Vec::new();
+    for gid in &guild_ids {
+        if let Ok(sub) = state.nats.subscribe(&subjects::chat_guild(gid)).await {
+            guild_subs.push(sub);
+        }
+        if let Ok(sub) = state.nats.subscribe(&subjects::typing_guild(gid)).await {
+            guild_subs.push(sub);
+        }
+        if let Ok(sub) = state.nats.subscribe(&subjects::presence_guild(gid)).await {
+            guild_subs.push(sub);
+        }
+    }
+
+    // Subscribe to personal DM inbox
+    let dm_subject = subjects::dm_user(&user_id);
+    let nats_dm_sub = match state.nats.subscribe(&dm_subject).await {
         Ok(sub) => sub,
         Err(e) => {
-            error!("Failed to subscribe to NATS chat: {}", e);
+            error!("Failed to subscribe to DM inbox: {}", e);
             state.connections.remove(&user_id).await;
             return;
         }
     };
 
-    let nats_typing_sub = match state.nats.subscribe("typing.>").await {
-        Ok(sub) => sub,
-        Err(e) => {
-            error!("Failed to subscribe to NATS typing: {}", e);
-            state.connections.remove(&user_id).await;
-            return;
-        }
-    };
-
-    let nats_dm_sub = match state.nats.subscribe("dm.>").await {
-        Ok(sub) => sub,
-        Err(e) => {
-            error!("Failed to subscribe to DM NATS: {}", e);
-            state.connections.remove(&user_id).await;
-            return;
-        }
-    };
-
-    // subject: chat.{guild_id}.{channel_id}
-    let chat_connections = state.connections.clone();
-    let chat_user_id = user_id.clone();
-    let chat_db = state.db.clone();
-    let chat_uid: i64 = user_id.parse().unwrap_or(0);
-    let nats_chat_task = tokio::spawn(async move {
-        let mut sub = nats_chat_sub;
-        while let Some(msg) = sub.next().await {
-            let subject = msg.subject.as_str();
-            let guild_id: i64 = match subject.split('.').nth(1).and_then(|s| s.parse().ok()) {
-                Some(id) => id,
-                None => continue,
-            };
-            let is_member = match pulsar_db::repo::guilds::is_member(&chat_db, guild_id, chat_uid).await {
-                Ok(v) => v,
-                Err(e) => { error!("DB error checking guild membership: {}", e); continue; }
-            };
-            if !is_member {
-                continue;
-            }
+    let guild_connections = state.connections.clone();
+    let guild_user_id = user_id.clone();
+    let nats_guild_task = tokio::spawn(async move {
+        use futures::StreamExt;
+        let mut combined = futures::stream::select_all(guild_subs);
+        while let Some(msg) = combined.next().await {
             let event: ServerEvent = match serde_json::from_slice(&msg.payload) {
                 Ok(e) => e,
                 Err(_) => continue,
             };
-            chat_connections.send_to_user(&chat_user_id, event).await;
-        }
-    });
-
-    // subject: typing.{guild_id}.{channel_id}
-    let typing_connections = state.connections.clone();
-    let typing_user_id = user_id.clone();
-    let typing_db = state.db.clone();
-    let typing_uid: i64 = user_id.parse().unwrap_or(0);
-    let nats_typing_task = tokio::spawn(async move {
-        let mut sub = nats_typing_sub;
-        while let Some(msg) = sub.next().await {
-            let subject = msg.subject.as_str();
-            let guild_id: i64 = match subject.split('.').nth(1).and_then(|s| s.parse().ok()) {
-                Some(id) => id,
-                None => continue,
-            };
-            let is_member = match pulsar_db::repo::guilds::is_member(&typing_db, guild_id, typing_uid).await {
-                Ok(v) => v,
-                Err(e) => { error!("DB error checking guild membership: {}", e); continue; }
-            };
-            if !is_member {
-                continue;
-            }
-            let event: ServerEvent = match serde_json::from_slice(&msg.payload) {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            typing_connections
-                .send_to_user(&typing_user_id, event)
-                .await;
+            guild_connections.send_to_user(&guild_user_id, event).await;
         }
     });
 
     let dm_connections = state.connections.clone();
     let dm_user_id = user_id.clone();
-    let dm_db = state.db.clone();
     let nats_dm_task = tokio::spawn(async move {
         let mut sub = nats_dm_sub;
         while let Some(msg) = sub.next().await {
-            let subject = msg.subject.as_str();
-            let dm_channel_id: i64 = match subject.strip_prefix("dm.").and_then(|s| s.parse().ok()) {
-                Some(id) => id,
-                None => continue,
-            };
-
-            let uid: i64 = match dm_user_id.parse() {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-            let is_participant = match pulsar_db::repo::dms::is_participant(&dm_db, dm_channel_id, uid).await {
-                Ok(v) => v,
-                Err(e) => { error!("DB error checking DM participation: {}", e); continue; }
-            };
-
-            if !is_participant {
-                continue;
-            }
-
             let event: ServerEvent = match serde_json::from_slice(&msg.payload) {
                 Ok(e) => e,
                 Err(_) => continue,
@@ -176,6 +125,25 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
             dm_connections.send_to_user(&dm_user_id, event).await;
         }
     });
+
+    {
+        let db = state.db.clone();
+        let nats = state.nats.clone();
+        let gids = guild_ids.clone();
+        let uid_str = user_id.clone();
+        tokio::spawn(async move {
+            let _ = pulsar_db::repo::users::update_status(&db, uid, "online").await;
+            let event = ServerEvent::PresenceUpdate {
+                user_id: uid_str,
+                status: pulsar_common::models::user::UserStatus::Online,
+            };
+            if let Ok(payload) = serde_json::to_vec(&event) {
+                for gid in &gids {
+                    let _ = nats.publish(&subjects::presence_guild(gid), &payload).await;
+                }
+            }
+        });
+    }
 
     let send_task = tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
@@ -196,45 +164,56 @@ async fn handle_socket(socket: WebSocket, state: GatewayState) {
     let recv_state = state.clone();
     let recv_user_id = user_id.clone();
     let recv_task = tokio::spawn(async move {
-        while let Some(Ok(message)) = receiver.next().await {
-            match message {
-                Message::Text(text) => {
-                    handle_client_message(
-                        &text,
-                        &recv_user_id,
-                        &recv_state,
-                    )
-                    .await;
+        let heartbeat_timeout = Duration::from_secs(65);
+        loop {
+            match tokio::time::timeout(heartbeat_timeout, receiver.next()).await {
+                Ok(Some(Ok(message))) => match message {
+                    Message::Text(text) => {
+                        handle_client_message(&text, &recv_user_id, &recv_state).await;
+                    }
+                    Message::Close(_) => break,
+                    _ => {}
+                },
+                Ok(Some(Err(_))) | Ok(None) => break,
+                Err(_) => {
+                    warn!(user_id = %recv_user_id, "Heartbeat timeout, closing connection");
+                    break;
                 }
-                Message::Close(_) => break,
-                _ => {}
             }
         }
     });
 
-    let send_abort = send_task.abort_handle();
-    let recv_abort = recv_task.abort_handle();
-    let chat_abort = nats_chat_task.abort_handle();
-    let typing_abort = nats_typing_task.abort_handle();
+    let guild_abort = nats_guild_task.abort_handle();
     let dm_abort = nats_dm_task.abort_handle();
 
     tokio::select! {
         _ = send_task => {},
         _ = recv_task => {},
-        _ = nats_chat_task => {},
-        _ = nats_typing_task => {},
-        _ = nats_dm_task => {},
     }
 
-    // Dropping a JoinHandle only detaches the task, abort to actually stop it.
-    send_abort.abort();
-    recv_abort.abort();
-    chat_abort.abort();
-    typing_abort.abort();
+    guild_abort.abort();
     dm_abort.abort();
 
     state.connections.remove(&user_id).await;
     info!(user_id = %user_id, "Client disconnected from gateway");
+
+    {
+        let db = state.db.clone();
+        let nats = state.nats.clone();
+        let uid_str = user_id.clone();
+        tokio::spawn(async move {
+            let _ = pulsar_db::repo::users::update_status(&db, uid, "offline").await;
+            let event = ServerEvent::PresenceUpdate {
+                user_id: uid_str,
+                status: pulsar_common::models::user::UserStatus::Offline,
+            };
+            if let Ok(payload) = serde_json::to_vec(&event) {
+                for gid in &guild_ids {
+                    let _ = nats.publish(&subjects::presence_guild(gid), &payload).await;
+                }
+            }
+        });
+    }
 }
 
 async fn wait_for_identity(
@@ -252,6 +231,14 @@ async fn wait_for_identity(
                         .jwt
                         .validate_token(&token)
                         .map_err(|_| "Invalid token".to_string())?;
+                    match crate::redis_client::is_jwt_blocked(&state.redis, &claims.jti).await {
+                        Ok(true) => return Err("Token has been revoked".to_string()),
+                        Ok(false) => {}
+                        Err(e) => {
+                            warn!("Redis blocklist check failed: {}", e);
+                            return Err("Authentication error".to_string());
+                        }
+                    }
                     return Ok(claims);
                 }
                 _ => return Err("Expected Identify as first message".into()),
@@ -361,13 +348,13 @@ async fn handle_client_message(
 
             let mut attachment_payloads = Vec::new();
             for att in &attachments {
-                let url = if !att.key.is_empty() {
-                    state.storage.generate_presigned_url(&att.key, 900)
-                        .await
-                        .unwrap_or_default()
-                } else {
-                    att.url.clone()
-                };
+                if att.key.is_empty() {
+                    warn!(user_id = %user_id, "Rejected attachment without server key");
+                    continue;
+                }
+                let url = state.storage.generate_presigned_url(&att.key, 900)
+                    .await
+                    .unwrap_or_default();
 
                 let att_id = pulsar_common::models::snowflake::Snowflake::generate().0;
                 if let Err(e) = pulsar_db::repo::attachments::insert(
@@ -382,8 +369,8 @@ async fn handle_client_message(
                         url: &url,
                     },
                 ).await {
-                    error!(att_id = %att_id, msg_id = %msg_id, error = %e, "Failed to insert attachment, skipping from payload");
-                    continue;
+                    error!(att_id = %att_id, msg_id = %msg_id, error = %e, "Failed to insert attachment, aborting send");
+                    return;
                 }
 
                 info!(att_id = %att_id, msg_id = %msg_id, "Attachment saved to DB");
@@ -416,9 +403,16 @@ async fn handle_client_message(
                 if let Err(e) = pulsar_db::repo::dms::update_last_message_at(&state.db, ch_id).await {
                     error!("Failed to update last_message_at for DM {}: {}", ch_id, e);
                 }
-                let subject = format!("dm.{}", channel_id);
-                if let Err(e) = state.nats.publish(&subject, &payload).await {
-                    error!("Failed to publish DM message to NATS: {}", e);
+                match pulsar_db::repo::dms::get_participants(&state.db, ch_id).await {
+                    Ok(participants) => {
+                        for participant_id in participants {
+                            let subject = subjects::dm_user(&participant_id.to_string());
+                            if let Err(e) = state.nats.publish(&subject, &payload).await {
+                                error!("Failed to publish DM to user {}: {}", participant_id, e);
+                            }
+                        }
+                    }
+                    Err(e) => error!("Failed to get DM participants for channel {}: {}", ch_id, e),
                 }
             } else if let Some(gid) = channel.guild_id {
                 let subject = subjects::chat_channel(&gid.to_string(), &channel_id);
@@ -432,11 +426,29 @@ async fn handle_client_message(
                 Ok(id) => id,
                 Err(_) => return,
             };
+            let u_id: i64 = match user_id.parse() {
+                Ok(id) => id,
+                Err(_) => return,
+            };
 
             let channel = match pulsar_db::repo::channels::find_by_id(&state.db, ch_id).await {
                 Ok(Some(ch)) => ch,
                 _ => return,
             };
+
+            if channel.kind == "dm" {
+                match pulsar_db::repo::dms::is_participant(&state.db, ch_id, u_id).await {
+                    Ok(true) => {}
+                    _ => return,
+                }
+            } else if let Some(gid) = channel.guild_id {
+                match pulsar_db::repo::guilds::is_member(&state.db, gid, u_id).await {
+                    Ok(true) => {}
+                    _ => return,
+                }
+            } else {
+                return;
+            }
 
             let event = ServerEvent::TypingStart {
                 channel_id: channel_id.clone(),
@@ -447,14 +459,20 @@ async fn handle_client_message(
                 Err(e) => { error!("Failed to serialize TypingStart: {}", e); return; }
             };
 
-            let subject = if channel.kind == "dm" {
-                format!("dm.{}", channel_id)
+            if channel.kind == "dm" {
+                match pulsar_db::repo::dms::get_participants(&state.db, ch_id).await {
+                    Ok(participants) => {
+                        for participant_id in participants {
+                            let subject = subjects::dm_user(&participant_id.to_string());
+                            let _ = state.nats.publish(&subject, &payload).await;
+                        }
+                    }
+                    Err(e) => error!("Failed to get DM participants: {}", e),
+                }
             } else if let Some(gid) = channel.guild_id {
-                subjects::typing_channel(&gid.to_string(), &channel_id)
-            } else {
-                return;
-            };
-            let _ = state.nats.publish(&subject, &payload).await;
+                let subject = subjects::typing_channel(&gid.to_string(), &channel_id);
+                let _ = state.nats.publish(&subject, &payload).await;
+            }
         }
         ClientEvent::Identify { .. } => {
             warn!("Received Identify after already authenticated");
