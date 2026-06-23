@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum_extra::extract::Multipart;
 use pulsar_common::error::AppError;
-use pulsar_db::repo::{channel_keys, channels, dms, guilds};
+use pulsar_db::repo::{attachments, channel_keys, channels, dms, guilds, pending_attachments};
 use serde::Serialize;
 use tracing::{info, warn};
 
@@ -148,6 +148,10 @@ pub async fn upload_file(
 
     let attachment_id = pulsar_common::models::snowflake::Snowflake::generate().0;
 
+    if let Err(e) = pending_attachments::insert(&state.db, user_id, channel_id_num, &result.key).await {
+        warn!("Failed to register pending attachment {}: {}", result.key, e);
+    }
+
     info!(
         filename = %file_name,
         size = %result.size,
@@ -218,6 +222,10 @@ pub async fn get_attachment_url(
     } else {
         return Err(AppError::Forbidden);
     }
+
+    attachments::find_by_storage_key(&state.db, &key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Attachment not found".into()))?;
 
     let url = state
         .storage

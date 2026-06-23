@@ -2,7 +2,6 @@ use axum::{extract::State, Json};
 use pulsar_common::{
     error::AppError,
     models::user::{SelfUserResponse, UserStatus},
-    privacy::{DmPrivacy, FriendRequestPrivacy},
 };
 use pulsar_db::repo::users;
 use serde::{Deserialize, Serialize};
@@ -44,6 +43,11 @@ pub async fn update_me(
         return Err(AppError::BadRequest("Username must be between 2 and 32 characters".into()));
     }
 
+    if let Some(ref url) = payload.avatar_url {
+        if !url.is_empty() && !url.starts_with(&state.storage_endpoint) {
+            return Err(AppError::BadRequest("avatar_url must point to the configured storage endpoint".into()));
+        }
+    }
     let avatar_url = payload.avatar_url.as_deref().or(current.avatar_url.as_deref());
     let status = payload.status.as_deref().unwrap_or(&current.status);
     let valid_statuses = ["online", "idle", "dnd", "offline"];
@@ -113,15 +117,32 @@ pub async fn update_settings(
 
     let current = users::get_settings(&state.db, user_id).await?;
 
-    let dm_priv = payload
-        .dm_privacy
-        .map(|s| DmPrivacy::from_db(&s).as_str().to_string())
-        .unwrap_or(current.dm_privacy);
+    const VALID_DM_PRIVACY: &[&str] = &[
+        "everyone", "friends_and_guilds", "friends_of_friends", "friends_only", "nobody",
+    ];
+    const VALID_FR_PRIVACY: &[&str] = &[
+        "everyone", "friends_of_friends", "guilds_only", "nobody",
+    ];
 
-    let fr_priv = payload
-        .friend_request_privacy
-        .map(|s| FriendRequestPrivacy::from_db(&s).as_str().to_string())
-        .unwrap_or(current.friend_request_privacy);
+    let dm_priv = match payload.dm_privacy {
+        None => current.dm_privacy,
+        Some(s) => {
+            if !VALID_DM_PRIVACY.contains(&s.as_str()) {
+                return Err(AppError::BadRequest(format!("Invalid dm_privacy: {}", s)));
+            }
+            s
+        }
+    };
+
+    let fr_priv = match payload.friend_request_privacy {
+        None => current.friend_request_privacy,
+        Some(s) => {
+            if !VALID_FR_PRIVACY.contains(&s.as_str()) {
+                return Err(AppError::BadRequest(format!("Invalid friend_request_privacy: {}", s)));
+            }
+            s
+        }
+    };
 
     let updated = users::update_settings(&state.db, user_id, &dm_priv, &fr_priv).await?;
 

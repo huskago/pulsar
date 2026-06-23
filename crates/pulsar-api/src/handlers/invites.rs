@@ -54,6 +54,12 @@ pub async fn create_invite(
 
     let code = generate_invite_code(10);
 
+    if let Some(max_age) = payload.max_age {
+        if max_age <= 0 || max_age > 604_800 {
+            return Err(AppError::BadRequest("max_age must be between 1 and 604800 seconds".into()));
+        }
+    }
+
     let expires_at = payload
         .max_age
         .map(|seconds| chrono::Utc::now() + chrono::Duration::seconds(seconds));

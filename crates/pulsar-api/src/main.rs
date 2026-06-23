@@ -80,11 +80,15 @@ async fn main() {
     let auth_limiter = middleware::rate_limit::AuthRateLimiter::new();
     let invite_limiter = middleware::rate_limit::AuthRateLimiter::new();
 
+    let storage_endpoint = std::env::var("STORAGE_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:9000".to_string());
+
     let state = AppState {
         db,
         jwt,
         livekit: LiveKitConfig::from_env(),
         storage,
+        storage_endpoint,
         redis,
         crypto,
         scylla,

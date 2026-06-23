@@ -12,6 +12,7 @@ pub struct AppState {
     pub jwt: JwtManager,
     pub livekit: LiveKitConfig,
     pub storage: StorageClient,
+    pub storage_endpoint: String,
     pub redis: RedisPool,
     pub crypto: CryptoManager,
     pub scylla: ScyllaClient,
