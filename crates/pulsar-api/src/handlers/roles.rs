@@ -137,11 +137,14 @@ pub async fn update_role(
 
     let caller_bits = roles::get_member_permissions(&state.db, guild_id, user_id).await?;
     let caller_perms = Permissions::new(caller_bits);
-    let requested_bits = payload.permissions.unwrap_or(current.permissions);
-    let permissions = if caller_perms.has(Permissions::ADMINISTRATOR) {
-        requested_bits
+    let permissions = if let Some(requested_bits) = payload.permissions {
+        if caller_perms.has(Permissions::ADMINISTRATOR) {
+            requested_bits
+        } else {
+            requested_bits & caller_bits
+        }
     } else {
-        requested_bits & caller_bits
+        current.permissions
     };
 
     let row = roles::update(&state.db, role_id, guild_id, name, color, permissions).await?;
@@ -190,6 +193,21 @@ pub async fn assign_role(
 
     if !guilds::is_member(&state.db, guild_id, target_id).await? {
         return Err(AppError::NotFound("Target user is not a member of this guild".into()));
+    }
+
+    let guild_roles = roles::find_by_guild(&state.db, guild_id).await?;
+    let target_role = guild_roles.iter().find(|r| r.id == role_id)
+        .ok_or(AppError::NotFound("Role not found in this guild".into()))?;
+
+    let guild = guilds::find_by_id(&state.db, guild_id).await?
+        .ok_or(AppError::NotFound("Guild not found".into()))?;
+
+    if guild.owner_id != user_id {
+        let caller_bits = roles::get_member_permissions(&state.db, guild_id, user_id).await?;
+        let caller_perms = Permissions::new(caller_bits);
+        if !caller_perms.has(Permissions::ADMINISTRATOR) && (target_role.permissions & !caller_bits) != 0 {
+            return Err(AppError::Forbidden);
+        }
     }
 
     roles::assign_role(&state.db, guild_id, target_id, role_id).await?;

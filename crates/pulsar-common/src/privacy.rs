@@ -60,7 +60,7 @@ impl FriendRequestPrivacy {
             "friends_of_friends" => Self::FriendsOfFriends,
             "guilds_only" => Self::GuildsOnly,
             "nobody" => Self::Nobody,
-            _ => Self::Everyone,
+            _ => Self::Nobody,
         }
     }
 }

@@ -41,6 +41,9 @@ pub async fn can_send_friend_request(
     if relationships::is_blocked(db, sender_id, target_id).await? {
         return Ok(false);
     }
+    if relationships::is_blocked(db, target_id, sender_id).await? {
+        return Ok(false);
+    }
 
     let settings = users::get_settings(db, target_id).await?;
     let privacy = FriendRequestPrivacy::from_db(&settings.friend_request_privacy);
