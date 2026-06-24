@@ -1,8 +1,10 @@
 # Pulsar
 
-An open-source, self-hosted communication platform, real-time chat, voice, and video. Built with Rust and SvelteKit, designed for privacy and security.
+An open-source, self-hosted communication platform, real-time chat, voice, and video. Built with Rust, designed for privacy and security.
 
 > Early development. Not production-ready.
+
+The official client is **[Orbit](https://git.huskago.ovh/huskago/orbit)**, a spatial, multi-server interface built with SolidJS + Tauri.
 
 ## Stack
 
@@ -10,7 +12,6 @@ An open-source, self-hosted communication platform, real-time chat, voice, and v
 |---|---|
 | API | Rust · axum · tokio |
 | Gateway (WebSocket) | Rust · axum |
-| Frontend | SvelteKit · Svelte 5 · Tailwind CSS v4 |
 | Messages | ScyllaDB (encrypted at rest) |
 | Relational data | PostgreSQL |
 | Pub/sub | NATS JetStream |
@@ -33,7 +34,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The API is available at `http://localhost:3000`, the gateway at `ws://localhost:3001/gateway`, and the web UI at `http://localhost:80`.
+The API is available at `http://localhost:3000` and the gateway at `ws://localhost:3001/gateway`.
 
 ## Local development
 
@@ -43,7 +44,7 @@ Start only the backing services:
 docker compose up -d db nats minio scylladb redis livekit
 ```
 
-Then run the backend and frontend separately:
+Then run the backend:
 
 ```bash
 # API (port 3000)
@@ -51,10 +52,9 @@ RUST_LOG=info cargo run -p pulsar-api
 
 # Gateway (port 3001)
 RUST_LOG=info cargo run -p pulsar-gateway
-
-# Frontend (port 5173)
-cd web && pnpm dev
 ```
+
+For the client, see [Orbit](https://git.huskago.ovh/huskago/orbit).
 
 ## Environment variables
 
@@ -68,6 +68,11 @@ Copy `.env.example` to `.env`. Required variables:
 | `LIVEKIT_URL` | Publicly reachable LiveKit URL (browser connects directly) |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | LiveKit credentials                                        |
 | `STORAGE_ENDPOINT` | MinIO URL (default: `http://localhost:9000`)               |
+
+## Related
+
+- [Orbit](https://git.huskago.ovh/huskago/orbit) - official client (SolidJS + Tauri)
+- [Pulsar](https://git.huskago.ovh/huskago/pulsar) - this repository
 
 ## License
 

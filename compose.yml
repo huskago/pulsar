@@ -165,23 +165,6 @@ services:
       retries: 5
       start_period: 30s
 
-  web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-      args:
-        # Replace with your IP or domain before building
-        PUBLIC_API_URL: http://localhost:3000
-        PUBLIC_GATEWAY_URL: ws://localhost:3001/gateway
-    container_name: pulsar-web
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    depends_on:
-      api:
-        condition: service_healthy
-      gateway:
-        condition: service_healthy
 
 volumes:
   postgres_data:
